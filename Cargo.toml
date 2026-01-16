@@ -1,0 +1,14 @@
+[package]
+name = "flex-layout-demo"
+version = "0.1.0"
+edition = "2021"
+description = "MVP Demo: Fully resizable studio layout with Makepad"
+
+[workspace]
+
+[dependencies]
+makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
+
+[[bin]]
+name = "flex-layout-demo"
+path = "src/main.rs"
