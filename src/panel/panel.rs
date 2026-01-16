@@ -1,0 +1,433 @@
+//! Panel widget - a draggable window panel with title bar
+//!
+//! This is the core panel component for the app shell grid system.
+
+use makepad_widgets::*;
+use crate::panel::PanelAction;
+use crate::theme::colors::panel_colors;
+
+live_design! {
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
+
+    use crate::live_design::*;
+
+    pub Panel = {{Panel}} {
+        width: 200
+        height: 150
+
+        closable: true
+        maximizable: true
+
+        show_bg: true
+        draw_bg: {
+            instance dark_mode: 0.0
+            instance panel_color: vec4(1.0, 1.0, 1.0, 1.0)
+            uniform border_width: 1.0
+
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                // Square corners - no border radius
+                sdf.rect(0.0, 0.0, self.rect_size.x, self.rect_size.y);
+                sdf.fill(self.panel_color);
+
+                // Light border
+                let border_color = mix(
+                    vec4(0.886, 0.910, 0.941, 1.0),  // slate-200
+                    vec4(0.200, 0.255, 0.333, 1.0),  // slate-700
+                    self.dark_mode
+                );
+                sdf.stroke(border_color, self.border_width);
+                return sdf.result;
+            }
+        }
+
+        flow: Down
+        padding: 0
+
+        // Title bar
+        title_bar = <View> {
+            width: Fill
+            height: 32
+            padding: { left: 8, right: 8 }
+            flow: Right
+            align: { y: 0.5 }
+
+            show_bg: true
+            draw_bg: {
+                instance dark_mode: 0.0
+                fn pixel(self) -> vec4 {
+                    // Light: slate-100, Dark: slate-700
+                    let light = vec4(0.945, 0.961, 0.976, 1.0);
+                    let dark = vec4(0.200, 0.255, 0.333, 1.0);
+                    return mix(light, dark, self.dark_mode);
+                }
+            }
+
+            // Drag handle icon (6 dots in 2 columns)
+            drag_handle = <View> {
+                width: 16
+                height: 20
+                margin: { right: 8 }
+                cursor: Hand
+
+                show_bg: true
+                draw_bg: {
+                    instance dark_mode: 0.0
+
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let dot_r = 1.5;
+
+                        // Dot color based on theme
+                        let light_dot = vec4(0.580, 0.639, 0.722, 1.0);  // slate-400
+                        let dark_dot = vec4(0.392, 0.455, 0.545, 1.0);   // slate-500
+                        let dot_color = mix(light_dot, dark_dot, self.dark_mode);
+
+                        let col1_x = 5.0;
+                        let col2_x = 11.0;
+                        let row1_y = 5.0;
+                        let row2_y = 10.0;
+                        let row3_y = 15.0;
+
+                        sdf.circle(col1_x, row1_y, dot_r);
+                        sdf.fill(dot_color);
+                        sdf.circle(col2_x, row1_y, dot_r);
+                        sdf.fill(dot_color);
+                        sdf.circle(col1_x, row2_y, dot_r);
+                        sdf.fill(dot_color);
+                        sdf.circle(col2_x, row2_y, dot_r);
+                        sdf.fill(dot_color);
+                        sdf.circle(col1_x, row3_y, dot_r);
+                        sdf.fill(dot_color);
+                        sdf.circle(col2_x, row3_y, dot_r);
+                        sdf.fill(dot_color);
+
+                        return sdf.result;
+                    }
+                }
+            }
+
+            title = <Label> {
+                draw_text: {
+                    instance dark_mode: 0.0
+                    text_style: <FONT_MEDIUM> { font_size: 11.0 }
+                    fn get_color(self) -> vec4 {
+                        // Light: gray-700, Dark: slate-200
+                        let light = vec4(0.247, 0.282, 0.333, 1.0);
+                        let dark = vec4(0.886, 0.910, 0.941, 1.0);
+                        return mix(light, dark, self.dark_mode);
+                    }
+                }
+                text: "Panel"
+            }
+
+            <View> { width: Fill }
+
+            max_btn = <Button> {
+                width: 20
+                height: 20
+                padding: 0
+                margin: { right: 4 }
+                text: ""
+                draw_bg: {
+                    instance dark_mode: 0.0
+
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let inset = 5.0;
+
+                        // Icon color
+                        let light_color = vec4(0.420, 0.447, 0.502, 1.0);  // gray-500
+                        let dark_color = vec4(0.580, 0.639, 0.722, 1.0);   // slate-400
+                        let hover_color = vec4(0.231, 0.510, 0.965, 1.0);  // blue-500
+                        let base = mix(light_color, dark_color, self.dark_mode);
+                        let color = mix(base, hover_color, self.hover);
+
+                        sdf.rect(inset, inset, self.rect_size.x - inset * 2.0, self.rect_size.y - inset * 2.0);
+                        sdf.stroke(color, 1.5);
+                        return sdf.result;
+                    }
+                }
+            }
+
+            restore_btn = <Button> {
+                width: 20
+                height: 20
+                padding: 0
+                margin: { right: 4 }
+                visible: false
+                text: ""
+                draw_bg: {
+                    instance dark_mode: 0.0
+
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let inset = 5.0;
+                        let offset = 2.0;
+
+                        let light_color = vec4(0.420, 0.447, 0.502, 1.0);
+                        let dark_color = vec4(0.580, 0.639, 0.722, 1.0);
+                        let hover_color = vec4(0.231, 0.510, 0.965, 1.0);
+                        let base = mix(light_color, dark_color, self.dark_mode);
+                        let color = mix(base, hover_color, self.hover);
+
+                        // Back square
+                        sdf.rect(inset + offset, inset, self.rect_size.x - inset * 2.0 - offset, self.rect_size.y - inset * 2.0 - offset);
+                        sdf.stroke(color, 1.2);
+                        // Front square
+                        sdf.rect(inset, inset + offset, self.rect_size.x - inset * 2.0 - offset, self.rect_size.y - inset * 2.0 - offset);
+                        sdf.stroke(color, 1.2);
+                        return sdf.result;
+                    }
+                }
+            }
+
+            close_btn = <Button> {
+                width: 20
+                height: 20
+                padding: 0
+                margin: 0
+                text: ""
+                draw_bg: {
+                    instance dark_mode: 0.0
+
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let inset = 6.0;
+
+                        let light_color = vec4(0.420, 0.447, 0.502, 1.0);
+                        let dark_color = vec4(0.580, 0.639, 0.722, 1.0);
+                        let hover_color = vec4(0.937, 0.267, 0.267, 1.0);  // red-500
+                        let base = mix(light_color, dark_color, self.dark_mode);
+                        let color = mix(base, hover_color, self.hover);
+
+                        sdf.move_to(inset, inset);
+                        sdf.line_to(self.rect_size.x - inset, self.rect_size.y - inset);
+                        sdf.stroke(color, 1.5);
+                        sdf.move_to(self.rect_size.x - inset, inset);
+                        sdf.line_to(inset, self.rect_size.y - inset);
+                        sdf.stroke(color, 1.5);
+                        return sdf.result;
+                    }
+                }
+            }
+        }
+
+        // Content area
+        content = <View> {
+            width: Fill
+            height: Fill
+            padding: 12
+            align: { x: 0.5, y: 0.5 }
+
+            content_label = <Label> {
+                draw_text: {
+                    instance dark_mode: 0.0
+                    text_style: <FONT_SEMIBOLD> { font_size: 24.0 }
+                    fn get_color(self) -> vec4 {
+                        // Light: gray-300, Dark: slate-600
+                        let light = vec4(0.796, 0.835, 0.882, 1.0);
+                        let dark = vec4(0.278, 0.333, 0.412, 1.0);
+                        return mix(light, dark, self.dark_mode);
+                    }
+                }
+                text: "#1"
+            }
+        }
+    }
+}
+
+#[derive(Live, LiveHook, Widget)]
+pub struct Panel {
+    #[deref]
+    view: View,
+
+    #[live]
+    panel_id: LiveId,
+
+    #[live]
+    title: String,
+
+    #[live]
+    closable: bool,
+
+    #[live]
+    maximizable: bool,
+
+    #[rust]
+    panel_index: usize,
+
+    #[rust]
+    is_maximized: bool,
+
+    #[rust]
+    is_dragging: bool,
+
+    #[rust]
+    drag_start: DVec2,
+
+    #[rust]
+    needs_visual_update: bool,
+}
+
+impl Widget for Panel {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let actions = cx.capture_actions(|cx| {
+            self.view.handle_event(cx, event, scope);
+        });
+
+        if self.view.button(id!(title_bar.close_btn)).clicked(&actions) {
+            cx.widget_action(
+                self.widget_uid(),
+                &scope.path,
+                PanelAction::Close(self.panel_id),
+            );
+        }
+
+        if self.view.button(id!(title_bar.max_btn)).clicked(&actions)
+            || self.view.button(id!(title_bar.restore_btn)).clicked(&actions)
+        {
+            cx.widget_action(
+                self.widget_uid(),
+                &scope.path,
+                PanelAction::Maximize(self.panel_id),
+            );
+        }
+
+        let drag_handle = self.view.view(id!(title_bar.drag_handle));
+        let title_bar = self.view.view(id!(title_bar));
+
+        let mut handled = false;
+        match event.hits(cx, drag_handle.area()) {
+            Hit::FingerDown(fe) => {
+                self.is_dragging = false;
+                self.drag_start = fe.abs;
+                handled = true;
+            }
+            Hit::FingerMove(fe) => {
+                let dist = (fe.abs - self.drag_start).length();
+                if !self.is_dragging && dist > 10.0 {
+                    self.is_dragging = true;
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        PanelAction::StartDrag(self.panel_id),
+                    );
+                }
+                handled = true;
+            }
+            Hit::FingerUp(_) => {
+                self.is_dragging = false;
+                handled = true;
+            }
+            _ => {}
+        }
+
+        if !handled {
+            match event.hits(cx, title_bar.area()) {
+                Hit::FingerDown(fe) => {
+                    self.is_dragging = false;
+                    self.drag_start = fe.abs;
+                }
+                Hit::FingerMove(fe) => {
+                    if !self.is_dragging && (fe.abs - self.drag_start).length() > 10.0 {
+                        self.is_dragging = true;
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &scope.path,
+                            PanelAction::StartDrag(self.panel_id),
+                        );
+                    }
+                }
+                Hit::FingerUp(_) => {
+                    self.is_dragging = false;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.apply_visual_update(cx);
+
+        self.view.button(id!(title_bar.max_btn)).set_visible(cx, !self.is_maximized && self.maximizable);
+        self.view.button(id!(title_bar.restore_btn)).set_visible(cx, self.is_maximized && self.maximizable);
+        self.view.button(id!(title_bar.close_btn)).set_visible(cx, self.closable);
+
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl Panel {
+    pub fn set_panel_index(&mut self, cx: &mut Cx, index: usize) {
+        if self.panel_index == index {
+            return;
+        }
+        self.panel_index = index;
+        self.needs_visual_update = true;
+        self.view.redraw(cx);
+    }
+
+    pub fn set_panel_id(&mut self, id: LiveId) {
+        self.panel_id = id;
+    }
+
+    pub fn set_maximized(&mut self, maximized: bool) {
+        self.is_maximized = maximized;
+    }
+
+    fn apply_visual_update(&mut self, cx: &mut Cx2d) {
+        if !self.needs_visual_update {
+            return;
+        }
+        self.needs_visual_update = false;
+
+        let index = self.panel_index;
+        let colors = panel_colors();
+        let color = colors[index % colors.len()];
+
+        self.view.apply_over(cx, live! {
+            draw_bg: { panel_color: (color) }
+        });
+
+        let title = if self.title.is_empty() {
+            format!("Panel {}", index + 1)
+        } else {
+            self.title.clone()
+        };
+        self.view.label(id!(title_bar.title)).set_text(cx, &title);
+
+        let content = format!("#{}", index + 1);
+        self.view.label(id!(content.content_label)).set_text(cx, &content);
+    }
+}
+
+impl PanelRef {
+    pub fn set_panel_index(&self, cx: &mut Cx, index: usize) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_panel_index(cx, index);
+        }
+    }
+
+    pub fn set_panel_id(&self, id: LiveId) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_panel_id(id);
+        }
+    }
+
+    pub fn set_maximized(&self, maximized: bool) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_maximized(maximized);
+        }
+    }
+
+    pub fn apply_dark_mode(&self, cx: &mut Cx, dark_mode: f64) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.view.apply_over(cx, live! {
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+        }
+    }
+}

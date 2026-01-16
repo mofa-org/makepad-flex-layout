@@ -1,0 +1,13 @@
+[package]
+name = "flex-layout-demo"
+version = "0.1.0"
+edition = "2021"
+description = "Demo app showcasing makepad-app-shell"
+
+[[bin]]
+name = "flex-layout-demo"
+path = "src/main.rs"
+
+[dependencies]
+makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
+makepad-app-shell = { path = "../.." }
