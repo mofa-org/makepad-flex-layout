@@ -19,6 +19,7 @@ live_design! {
 
         closable: true
         maximizable: true
+        fullscreenable: false
 
         show_bg: true
         draw_bg: {
@@ -124,6 +125,108 @@ live_design! {
             }
 
             <View> { width: Fill }
+
+            // Fullscreen button (arrows pointing outward)
+            fullscreen_btn = <Button> {
+                width: 20
+                height: 20
+                padding: 0
+                margin: { right: 4 }
+                visible: false
+                text: ""
+                draw_bg: {
+                    instance dark_mode: 0.0
+
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let inset = 5.0;
+                        let arrow_len = 4.0;
+
+                        let light_color = vec4(0.420, 0.447, 0.502, 1.0);
+                        let dark_color = vec4(0.580, 0.639, 0.722, 1.0);
+                        let hover_color = vec4(0.231, 0.510, 0.965, 1.0);
+                        let base = mix(light_color, dark_color, self.dark_mode);
+                        let color = mix(base, hover_color, self.hover);
+
+                        // Four corners with arrows pointing outward
+                        // Top-left arrow
+                        sdf.move_to(inset, inset + arrow_len);
+                        sdf.line_to(inset, inset);
+                        sdf.line_to(inset + arrow_len, inset);
+                        sdf.stroke(color, 1.2);
+
+                        // Top-right arrow
+                        sdf.move_to(self.rect_size.x - inset - arrow_len, inset);
+                        sdf.line_to(self.rect_size.x - inset, inset);
+                        sdf.line_to(self.rect_size.x - inset, inset + arrow_len);
+                        sdf.stroke(color, 1.2);
+
+                        // Bottom-left arrow
+                        sdf.move_to(inset, self.rect_size.y - inset - arrow_len);
+                        sdf.line_to(inset, self.rect_size.y - inset);
+                        sdf.line_to(inset + arrow_len, self.rect_size.y - inset);
+                        sdf.stroke(color, 1.2);
+
+                        // Bottom-right arrow
+                        sdf.move_to(self.rect_size.x - inset - arrow_len, self.rect_size.y - inset);
+                        sdf.line_to(self.rect_size.x - inset, self.rect_size.y - inset);
+                        sdf.line_to(self.rect_size.x - inset, self.rect_size.y - inset - arrow_len);
+                        sdf.stroke(color, 1.2);
+
+                        return sdf.result;
+                    }
+                }
+            }
+
+            // Restore from fullscreen button (arrows pointing inward)
+            restore_fullscreen_btn = <Button> {
+                width: 20
+                height: 20
+                padding: 0
+                margin: { right: 4 }
+                visible: false
+                text: ""
+                draw_bg: {
+                    instance dark_mode: 0.0
+
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let inset = 5.0;
+                        let arrow_len = 4.0;
+                        let cx = self.rect_size.x / 2.0;
+                        let cy = self.rect_size.y / 2.0;
+
+                        let light_color = vec4(0.420, 0.447, 0.502, 1.0);
+                        let dark_color = vec4(0.580, 0.639, 0.722, 1.0);
+                        let hover_color = vec4(0.231, 0.510, 0.965, 1.0);
+                        let base = mix(light_color, dark_color, self.dark_mode);
+                        let color = mix(base, hover_color, self.hover);
+
+                        // Four corners with arrows pointing inward (toward center)
+                        // Top-left pointing to center
+                        sdf.move_to(inset, inset);
+                        sdf.line_to(cx - 2.0, cy - 2.0);
+                        sdf.stroke(color, 1.2);
+
+                        // Top-right pointing to center
+                        sdf.move_to(self.rect_size.x - inset, inset);
+                        sdf.line_to(cx + 2.0, cy - 2.0);
+                        sdf.stroke(color, 1.2);
+
+                        // Bottom-left pointing to center
+                        sdf.move_to(inset, self.rect_size.y - inset);
+                        sdf.line_to(cx - 2.0, cy + 2.0);
+                        sdf.stroke(color, 1.2);
+
+                        // Bottom-right pointing to center
+                        sdf.move_to(self.rect_size.x - inset, self.rect_size.y - inset);
+                        sdf.line_to(cx + 2.0, cy + 2.0);
+                        sdf.stroke(color, 1.2);
+
+                        return sdf.result;
+                    }
+                }
+            }
 
             max_btn = <Button> {
                 width: 20
@@ -244,7 +347,7 @@ pub struct Panel {
     #[deref]
     view: View,
 
-    #[live]
+    #[rust]
     panel_id: LiveId,
 
     #[live]
@@ -256,11 +359,17 @@ pub struct Panel {
     #[live]
     maximizable: bool,
 
+    #[live]
+    fullscreenable: bool,
+
     #[rust]
     panel_index: usize,
 
     #[rust]
     is_maximized: bool,
+
+    #[rust]
+    is_fullscreen: bool,
 
     #[rust]
     is_dragging: bool,
@@ -296,9 +405,20 @@ impl Widget for Panel {
             );
         }
 
+        if self.view.button(id!(title_bar.fullscreen_btn)).clicked(&actions)
+            || self.view.button(id!(title_bar.restore_fullscreen_btn)).clicked(&actions)
+        {
+            cx.widget_action(
+                self.widget_uid(),
+                &scope.path,
+                PanelAction::Fullscreen(self.panel_id),
+            );
+        }
+
         let drag_handle = self.view.view(id!(title_bar.drag_handle));
         let title_bar = self.view.view(id!(title_bar));
 
+        // Handle drag from drag_handle
         let mut handled = false;
         match event.hits(cx, drag_handle.area()) {
             Hit::FingerDown(fe) => {
@@ -325,6 +445,7 @@ impl Widget for Panel {
             _ => {}
         }
 
+        // Also allow dragging from title bar (excluding buttons area)
         if !handled {
             match event.hits(cx, title_bar.area()) {
                 Hit::FingerDown(fe) => {
@@ -352,8 +473,15 @@ impl Widget for Panel {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.apply_visual_update(cx);
 
+        // Maximize buttons (for main grid)
         self.view.button(id!(title_bar.max_btn)).set_visible(cx, !self.is_maximized && self.maximizable);
         self.view.button(id!(title_bar.restore_btn)).set_visible(cx, self.is_maximized && self.maximizable);
+
+        // Fullscreen buttons (for footer grid)
+        self.view.button(id!(title_bar.fullscreen_btn)).set_visible(cx, !self.is_fullscreen && self.fullscreenable);
+        self.view.button(id!(title_bar.restore_fullscreen_btn)).set_visible(cx, self.is_fullscreen && self.fullscreenable);
+
+        // Close button
         self.view.button(id!(title_bar.close_btn)).set_visible(cx, self.closable);
 
         self.view.draw_walk(cx, scope, walk)
@@ -376,6 +504,10 @@ impl Panel {
 
     pub fn set_maximized(&mut self, maximized: bool) {
         self.is_maximized = maximized;
+    }
+
+    pub fn set_fullscreen(&mut self, fullscreen: bool) {
+        self.is_fullscreen = fullscreen;
     }
 
     fn apply_visual_update(&mut self, cx: &mut Cx2d) {
@@ -420,6 +552,12 @@ impl PanelRef {
     pub fn set_maximized(&self, maximized: bool) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_maximized(maximized);
+        }
+    }
+
+    pub fn set_fullscreen(&self, fullscreen: bool) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_fullscreen(fullscreen);
         }
     }
 

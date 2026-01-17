@@ -5,8 +5,8 @@ use crate::theme::{ShellTheme, THEME_TRANSITION_DURATION};
 use crate::shell::config::ShellConfig;
 use crate::shell::header::ShellHeaderAction;
 use crate::shell::sidebar::ShellSidebarWidgetExt;
-use crate::shell::footer::ShellFooterWidgetExt;
 use crate::grid::panel_grid::PanelGridWidgetExt;
+use crate::grid::footer_grid::FooterGridWidgetExt;
 
 live_design! {
     use link::theme::*;
@@ -15,9 +15,58 @@ live_design! {
 
     // Import shell components - must use crate path for cross-module visibility
     use crate::shell::header::ShellHeader;
-    use crate::shell::footer::ShellFooter;
     use crate::shell::sidebar::ShellSidebar;
     use crate::grid::panel_grid::PanelGrid;
+    use crate::grid::footer_grid::FooterGrid;
+
+    // Thin splitter template with light colors
+    ThinSplitter = <Splitter> {
+        size: 1.0
+        draw_bg: {
+            color: vec4(0.886, 0.910, 0.941, 1.0)     // slate-200 (light)
+            color_hover: vec4(0.384, 0.514, 0.965, 1.0)  // blue-500 (highlight)
+            color_drag: vec4(0.231, 0.400, 0.900, 1.0)   // blue-600
+
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                // Background changes on hover
+                let bg_normal = vec4(0.945, 0.961, 0.976, 1.0);  // slate-100
+                let bg_hover = vec4(0.925, 0.937, 0.976, 1.0);   // slight blue tint
+                sdf.clear(mix(bg_normal, bg_hover, self.hover));
+
+                if self.is_vertical > 0.5 {
+                    sdf.box(
+                        self.splitter_pad,
+                        self.rect_size.y * 0.5 - self.size * 0.5,
+                        self.rect_size.x - 2.0 * self.splitter_pad,
+                        self.size,
+                        self.border_radius
+                    );
+                }
+                else {
+                    sdf.box(
+                        self.rect_size.x * 0.5 - self.size * 0.5,
+                        self.splitter_pad,
+                        self.size,
+                        self.rect_size.y - 2.0 * self.splitter_pad,
+                        self.border_radius
+                    );
+                }
+
+                return sdf.fill_keep(
+                    mix(
+                        self.color,
+                        mix(
+                            self.color_hover,
+                            self.color_drag,
+                            self.drag
+                        ),
+                        self.hover
+                    )
+                );
+            }
+        }
+    }
 
     pub ShellLayout = {{ShellLayout}} {
         width: Fill
@@ -42,6 +91,15 @@ live_design! {
         dock = <Dock> {
             width: Fill
             height: Fill
+            padding: 0
+
+            // Use thin splitter for this dock
+            splitter: <ThinSplitter> {}
+
+            // Reduce corner radius (default is 20)
+            round_corner: {
+                border_radius: 0.0
+            }
 
             // Root is vertical splitter for footer
             root = Splitter {
@@ -96,7 +154,9 @@ live_design! {
                 title: "Properties"
             }
 
-            footer_content = <ShellFooter> {}
+            footer_content = <FooterGrid> {
+                initial_panels: 7
+            }
         }
     }
 }
@@ -134,8 +194,17 @@ impl Widget for ShellLayout {
 
         // Handle header actions
         for action in actions.iter() {
-            if let ShellHeaderAction::ToggleDarkMode = action.as_widget_action().cast() {
-                self.toggle_dark_mode(cx);
+            match action.as_widget_action().cast::<ShellHeaderAction>() {
+                ShellHeaderAction::ToggleDarkMode => {
+                    self.toggle_dark_mode(cx);
+                }
+                ShellHeaderAction::ResetLayout => {
+                    self.reset_layout(cx);
+                }
+                ShellHeaderAction::SaveLayout => {
+                    self.save_layout(cx);
+                }
+                ShellHeaderAction::None => {}
             }
         }
 
@@ -218,16 +287,37 @@ impl ShellLayout {
         self.view.button(id!(header.theme_toggle)).apply_over(cx, live! {
             draw_bg: { dark_mode: (dm) }
         });
+        self.view.button(id!(header.reset_btn)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+        });
+        self.view.button(id!(header.save_btn)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+        });
 
-        // Access Dock content using shell_sidebar/shell_footer/panel_grid widget refs
-        // These use recursive search to find widgets inside the Dock
+        // Access Dock content using widget refs with recursive search
         self.view.shell_sidebar(id!(left_sidebar_content)).apply_dark_mode(cx, dm);
         self.view.shell_sidebar(id!(right_sidebar_content)).apply_dark_mode(cx, dm);
-        self.view.shell_footer(id!(footer_content)).apply_dark_mode(cx, dm);
         self.view.panel_grid(id!(center_content)).apply_dark_mode(cx, dm);
+        self.view.footer_grid(id!(footer_content)).apply_dark_mode(cx, dm);
 
         // Note: Dock splitters use a neutral semi-transparent color
         // that works in both light and dark modes (can't dynamically theme them)
+    }
+
+    /// Reset layout to default state
+    pub fn reset_layout(&mut self, cx: &mut Cx) {
+        // Reset PanelGrid
+        self.view.panel_grid(id!(center_content)).reset_layout(cx);
+        // Reset FooterGrid
+        self.view.footer_grid(id!(footer_content)).reset_layout(cx);
+        self.view.redraw(cx);
+    }
+
+    /// Save current layout (placeholder for persistence)
+    pub fn save_layout(&mut self, _cx: &mut Cx) {
+        // TODO: Implement layout persistence
+        // For now, just log that save was requested
+        log!("Save layout requested");
     }
 
     /// Get the shell configuration

@@ -46,6 +46,7 @@ live_design! {
         width: Fill
         height: Fill
         flow: Down
+        cursor: Default
 
         show_bg: true
         draw_bg: {

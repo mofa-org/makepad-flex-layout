@@ -23,7 +23,7 @@ live_design! {
     pub PanelGrid = {{PanelGrid}} {
         width: Fill
         height: Fill
-        padding: 8
+        padding: 0
 
         show_bg: true
         draw_bg: {
@@ -166,6 +166,9 @@ impl Widget for PanelGrid {
                 }
                 PanelAction::Maximize(id) => {
                     self.toggle_maximize(cx, id.0);
+                }
+                PanelAction::Fullscreen(_) => {
+                    // Fullscreen is handled by FooterGrid, not main PanelGrid
                 }
                 PanelAction::StartDrag(id) => {
                     self.dragging_panel = Some(id.0);
@@ -463,6 +466,15 @@ impl PanelGridRef {
     pub fn set_layout_state(&self, cx: &mut Cx, state: LayoutState) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_layout_state(cx, state);
+        }
+    }
+
+    /// Reset layout to default state
+    pub fn reset_layout(&self, cx: &mut Cx) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.layout_state = LayoutState::default();
+            inner.needs_layout_update = true;
+            inner.view.redraw(cx);
         }
     }
 
