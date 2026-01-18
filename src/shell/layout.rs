@@ -263,6 +263,7 @@ live_design! {
             dock_wrapper = <View> {
                 width: Fill
                 height: Fill
+                margin: { left: 0.0 }  // Explicit initial margin (collapsed state)
 
                 // Animator for push effect
                 animator: {
@@ -355,7 +356,31 @@ live_design! {
             } // End dock_wrapper
         } // End main_container
 
-        // Overlay sidebar - appears/disappears instantly on hover
+        // Pinned sidebar - animates width and pushes content (click behavior)
+        pinned_sidebar = <View> {
+            width: 0  // Starts collapsed, animates to 270
+            height: Fill
+            margin: { top: 48.0, left: 0.0 }  // Below header, at left edge
+            visible: false
+            clip_x: true  // Clip content during width animation
+            clip_y: true
+
+            show_bg: true
+            draw_bg: {
+                instance dark_mode: 0.0
+
+                fn pixel(self) -> vec4 {
+                    // Main background - purple tinted (same as overlay)
+                    let light_bg = vec4(0.992, 0.988, 1.0, 1.0);  // very light purple
+                    let dark_bg = vec4(0.067, 0.055, 0.110, 1.0); // very dark purple
+                    return mix(light_bg, dark_bg, self.dark_mode);
+                }
+            }
+
+            pinned_sidebar_content = <OverlaySidebarContent> {}
+        }
+
+        // Overlay sidebar - appears/disappears instantly on hover (not used currently)
         overlay_sidebar = <View> {
             width: 270
             height: Fill
@@ -421,13 +446,23 @@ pub struct ShellLayout {
     #[rust]
     sidebar_pinned: bool,
 
-    /// Whether overlay is visible (hover state - doesn't push)
+    /// Debounce for click events (prevent double-toggle)
     #[rust]
-    overlay_visible: bool,
+    last_click_time: f64,
 
-    /// Track if mouse is over overlay area
+    /// Animation state for pinned sidebar (frame-by-frame animation like mofa-studio)
     #[rust]
-    mouse_over_overlay: bool,
+    sidebar_pin_animating: bool,
+
+    #[rust]
+    sidebar_pin_anim_start: f64,
+
+    #[rust]
+    sidebar_pin_expanding: bool,
+
+    /// Whether overlay sidebar is showing (hover state - doesn't push content)
+    #[rust]
+    overlay_showing: bool,
 }
 
 impl Widget for ShellLayout {
@@ -436,48 +471,49 @@ impl Widget for ShellLayout {
             self.view.handle_event(cx, event, scope);
         });
 
-        // Track mouse position to detect hover over hamburger and overlay
-        // This is more reliable than Hit events which can be affected by Button's internal handling
+        // Hover logic: show overlay sidebar when hovering hamburger or overlay itself
+        // Only show overlay if sidebar is not pinned (pinned takes precedence)
         if let Event::MouseMove(e) = event {
-            // Get hamburger button area
-            let hamburger = self.view.button(id!(main_container.header.hamburger_btn));
-            let hamburger_rect = hamburger.area().rect(cx);
+            if !self.sidebar_pinned {
+                // Get hamburger button area
+                let hamburger = self.view.button(id!(main_container.header.hamburger_btn));
+                let hamburger_rect = hamburger.area().rect(cx);
 
-            // Check if mouse is over hamburger with padding
-            let padding = 15.0;
-            let in_hamburger = e.abs.x >= hamburger_rect.pos.x - padding
-                && e.abs.x <= hamburger_rect.pos.x + hamburger_rect.size.x + padding
-                && e.abs.y >= hamburger_rect.pos.y - padding
-                && e.abs.y <= hamburger_rect.pos.y + hamburger_rect.size.y + padding;
+                // Get overlay sidebar area (fixed size even when not visible)
+                let overlay = self.view.view(id!(overlay_sidebar));
 
-            // Show overlay when hovering hamburger (if not already visible)
-            if in_hamburger && !self.overlay_visible && !self.sidebar_pinned {
-                log!("layout.rs - MouseMove detected over hamburger, showing overlay");
-                self.show_overlay(cx);
-            }
+                // Create a combined hover zone:
+                // - The hamburger button
+                // - A bridge zone from hamburger down to overlay
+                // - The overlay sidebar area (270x full height, starting at y=48)
+                let over_hamburger = hamburger_rect.contains(e.abs);
 
-            // Track overlay area for closing
-            if self.overlay_visible && !self.sidebar_pinned {
-                // Overlay area: x from left edge to 285, y from 0 to bottom
-                let overlay_width = 270.0;
-                let overlay_height = 900.0;
+                // Bridge zone: area below hamburger connecting to overlay
+                // Extends from hamburger's left edge to overlay width, from hamburger bottom to overlay top + some buffer
+                let bridge_zone = Rect {
+                    pos: dvec2(0.0, hamburger_rect.pos.y),
+                    size: dvec2(270.0, 60.0),  // Cover header area + a bit below
+                };
+                let over_bridge = self.overlay_showing && bridge_zone.contains(e.abs);
 
-                let in_overlay = e.abs.x <= overlay_width + padding
-                    && e.abs.y >= 0.0
-                    && e.abs.y <= overlay_height + padding;
+                // Overlay zone: the actual sidebar area (y starts at 48, extends down)
+                let overlay_zone = Rect {
+                    pos: dvec2(0.0, 48.0),
+                    size: dvec2(270.0, 600.0),  // Fixed height for hover detection
+                };
+                let over_overlay = self.overlay_showing && overlay_zone.contains(e.abs);
 
-                let was_over = self.mouse_over_overlay;
-                self.mouse_over_overlay = in_hamburger || in_overlay;
-
-                // Log only when state changes
-                if was_over != self.mouse_over_overlay {
-                    log!("layout.rs - MouseMove: mouse=({:.1}, {:.1}), in_hamburger={}, in_overlay={}", e.abs.x, e.abs.y, in_hamburger, in_overlay);
-                }
-
-                // If mouse left both areas, hide the overlay
-                if !self.mouse_over_overlay {
-                    log!("layout.rs - Hiding overlay: mouse left hover areas");
-                    self.hide_overlay(cx);
+                if over_hamburger || over_bridge || over_overlay {
+                    if !self.overlay_showing {
+                        self.overlay_showing = true;
+                        overlay.set_visible(cx, true);
+                        self.apply_overlay_theme(cx);
+                        self.view.redraw(cx);
+                    }
+                } else if self.overlay_showing {
+                    self.overlay_showing = false;
+                    overlay.set_visible(cx, false);
+                    self.view.redraw(cx);
                 }
             }
         }
@@ -496,8 +532,17 @@ impl Widget for ShellLayout {
                     // Hover is now handled via MouseMove tracking in layout
                 }
                 ShellHeaderAction::HamburgerClicked => {
-                    // Toggle sidebar expanded/pinned state (click to expand/collapse)
-                    self.toggle_sidebar_expanded(cx);
+                    // Debounce click events (prevent double-toggle from rapid clicks)
+                    let now = Cx::time_now();
+                    let time_since_last = now - self.last_click_time;
+                    if time_since_last > 0.3 {  // 300ms debounce
+                        self.last_click_time = now;
+                        log!("layout.rs - HamburgerClicked received (delta={:.3}s), toggling sidebar", time_since_last);
+                        // Toggle sidebar expanded/pinned state (click to expand/collapse)
+                        self.toggle_sidebar_expanded(cx);
+                    } else {
+                        log!("layout.rs - HamburgerClicked debounced (delta={:.3}s too fast)", time_since_last);
+                    }
                 }
                 ShellHeaderAction::ResetLayout => {
                     self.reset_layout(cx);
@@ -524,6 +569,9 @@ impl Widget for ShellLayout {
         if let Event::NextFrame(_) = event {
             if self.dark_mode_animating {
                 self.update_dark_mode_animation(cx);
+            }
+            if self.sidebar_pin_animating {
+                self.update_sidebar_animation(cx);
             }
         }
     }
@@ -578,54 +626,74 @@ impl ShellLayout {
         self.view.redraw(cx);
     }
 
-    /// Show overlay sidebar (hover - no push)
-    fn show_overlay(&mut self, cx: &mut Cx) {
-        log!("layout.rs - show_overlay called, overlay_visible={}", self.overlay_visible);
-        if self.overlay_visible {
-            return;
-        }
-        self.overlay_visible = true;
-
-        let overlay = self.view.view(id!(overlay_sidebar));
-        overlay.set_visible(cx, true);
-        log!("layout.rs - show_overlay: set visible");
-
-        self.view.redraw(cx);
-    }
-
-    /// Hide overlay sidebar (hover out - no push)
-    fn hide_overlay(&mut self, cx: &mut Cx) {
-        log!("layout.rs - hide_overlay called, overlay_visible={}, sidebar_pinned={}", self.overlay_visible, self.sidebar_pinned);
-        if !self.overlay_visible || self.sidebar_pinned {
-            return;
-        }
-        self.overlay_visible = false;
-
-        let overlay = self.view.view(id!(overlay_sidebar));
-        // Hide instantly - just set visibility
-        overlay.set_visible(cx, false);
-        log!("layout.rs - hide_overlay: set hidden");
-
-        self.view.redraw(cx);
-    }
-
     /// Toggle sidebar expanded state - expands sidebar and pushes dock content
+    /// Uses frame-by-frame animation (like MoFA Studio) for synced sidebar + content push
     fn toggle_sidebar_expanded(&mut self, cx: &mut Cx) {
         self.sidebar_pinned = !self.sidebar_pinned;
+        self.sidebar_pin_expanding = self.sidebar_pinned;
+        log!("layout.rs - toggle_sidebar_expanded: sidebar_pinned={}, expanding={}", self.sidebar_pinned, self.sidebar_pin_expanding);
 
-        let overlay = self.view.view(id!(overlay_sidebar));
-        let dock_wrapper = self.view.view(id!(main_container.dock_wrapper));
+        // Hide overlay sidebar when pinning (pinned takes over)
+        if self.overlay_showing {
+            self.overlay_showing = false;
+            self.view.view(id!(overlay_sidebar)).set_visible(cx, false);
+        }
 
-        if self.sidebar_pinned {
-            // Expand: show overlay and push dock content
-            self.overlay_visible = true;
-            overlay.set_visible(cx, true);
-            dock_wrapper.animator_play(cx, id!(sidebar.expanded));
+        // Start frame-by-frame animation
+        self.sidebar_pin_animating = true;
+        self.sidebar_pin_anim_start = Cx::time_now();
+
+        // Make pinned sidebar visible when expanding
+        let pinned = self.view.view(id!(pinned_sidebar));
+        if self.sidebar_pin_expanding {
+            pinned.set_visible(cx, true);
+        }
+
+        // Request animation frames
+        cx.new_next_frame();
+        self.view.redraw(cx);
+    }
+
+    /// Update sidebar pin animation (frame-by-frame like MoFA Studio)
+    fn update_sidebar_animation(&mut self, cx: &mut Cx) {
+        const SIDEBAR_WIDTH: f64 = 270.0;
+        const ANIM_DURATION: f64 = 0.25;  // 250ms animation
+
+        let elapsed = Cx::time_now() - self.sidebar_pin_anim_start;
+        let progress = (elapsed / ANIM_DURATION).min(1.0);
+
+        // Ease out cubic for smooth deceleration
+        let eased = 1.0 - (1.0 - progress).powi(3);
+
+        // Calculate current width based on direction
+        let current_width = if self.sidebar_pin_expanding {
+            SIDEBAR_WIDTH * eased
         } else {
-            // Collapse: hide overlay and restore dock content
-            self.overlay_visible = false;
-            overlay.set_visible(cx, false);
-            dock_wrapper.animator_play(cx, id!(sidebar.collapsed));
+            SIDEBAR_WIDTH * (1.0 - eased)
+        };
+
+        // Apply width to pinned sidebar
+        let pinned = self.view.view(id!(pinned_sidebar));
+        pinned.apply_over(cx, live! { width: (current_width) });
+
+        // Apply matching margin to dock_wrapper (synced push effect)
+        let dock_wrapper = self.view.view(id!(main_container.dock_wrapper));
+        dock_wrapper.apply_over(cx, live! { margin: { left: (current_width) } });
+
+        log!("layout.rs - sidebar animation: progress={:.2}, width={:.1}", progress, current_width);
+
+        if progress >= 1.0 {
+            // Animation complete
+            self.sidebar_pin_animating = false;
+            log!("layout.rs - sidebar animation complete, expanding={}", self.sidebar_pin_expanding);
+
+            // Hide sidebar when fully collapsed
+            if !self.sidebar_pin_expanding {
+                pinned.set_visible(cx, false);
+            }
+        } else {
+            // Continue animation
+            cx.new_next_frame();
         }
 
         self.view.redraw(cx);
@@ -670,11 +738,24 @@ impl ShellLayout {
         self.view.view(id!(overlay_sidebar)).apply_over(cx, live! {
             draw_bg: { dark_mode: (dm) }
         });
-        // Note: overlay_sidebar_content is a View, not ShellSidebar, so we don't call apply_dark_mode on it
+
+        // Apply to pinned sidebar (purple themed - used for click toggle)
+        self.view.view(id!(pinned_sidebar)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+        });
+        // Note: overlay_sidebar_content and pinned_sidebar_content are Views, not ShellSidebar
         // The dark_mode instances in the overlay menu buttons handle theming automatically
 
         // Note: Dock splitters use a neutral semi-transparent color
         // that works in both light and dark modes (can't dynamically theme them)
+    }
+
+    /// Apply theme to overlay sidebar only (called when showing overlay)
+    fn apply_overlay_theme(&mut self, cx: &mut Cx) {
+        let dm = self.theme.dark_mode_anim;
+        self.view.view(id!(overlay_sidebar)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+        });
     }
 
     /// Reset layout to default state
