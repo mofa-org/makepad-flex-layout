@@ -26,10 +26,5 @@ pub use config::{ShellConfig, ShellConfigBuilder};
 pub use header::{ShellHeader, ShellHeaderRef};
 pub use footer::{ShellFooter, ShellFooterRef};
 pub use sidebar::{ShellSidebar, ShellSidebarRef};
-pub use sidebar_menu::{
-    SidebarMenuItem, SidebarMenuItemRef,
-    ShowMoreButton, ShowMoreButtonRef,
-    ExpandableSection, ExpandableSectionRef,
-    SidebarMenuAction, SidebarMenuWidgetExt,
-};
+// sidebar_menu exports live_design templates (SidebarMenuButton, ShowMoreContainer, MoreAppsSection)
 pub use layout::{ShellLayout, ShellLayoutRef};

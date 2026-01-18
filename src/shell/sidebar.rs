@@ -7,7 +7,6 @@
 //! - Dark mode support
 
 use makepad_widgets::*;
-use crate::shell::sidebar_menu::{SidebarMenuAction, SidebarMenuWidgetExt};
 
 live_design! {
     use link::theme::*;
@@ -91,47 +90,67 @@ live_design! {
             height: Fit
             flow: Down
             padding: { left: 8, right: 8, top: 4, bottom: 4 }
+            spacing: 2
 
-            // Primary apps (always visible)
-            app_item_0 = <SidebarMenuItem> {
-                item_id: app_0
-                label = { text: "Dashboard" }
+            // Primary apps with icons
+            app_btn_0 = <SidebarMenuButton> {
+                text: "Dashboard"
+                draw_icon: { svg_file: dep("crate://makepad-widgets/resources/icons/icon_layout.svg") }
             }
-            app_item_1 = <SidebarMenuItem> {
-                item_id: app_1
-                label = { text: "Editor" }
+            app_btn_1 = <SidebarMenuButton> {
+                text: "Editor"
+                draw_icon: { svg_file: dep("crate://makepad-widgets/resources/icons/icon_file.svg") }
             }
-            app_item_2 = <SidebarMenuItem> {
-                item_id: app_2
-                label = { text: "Terminal" }
+            app_btn_2 = <SidebarMenuButton> {
+                text: "Terminal"
+                draw_icon: { svg_file: dep("crate://makepad-widgets/resources/icons/icon_text.svg") }
             }
-            app_item_3 = <SidebarMenuItem> {
-                item_id: app_3
-                label = { text: "Explorer" }
+            app_btn_3 = <SidebarMenuButton> {
+                text: "Explorer"
+                draw_icon: { svg_file: dep("crate://makepad-widgets/resources/icons/icon_folder.svg") }
             }
 
-            // Show More button
-            show_more_btn = <ShowMoreButton> {}
+            // Show More button (using Button for reliable click detection)
+            show_more_btn = <Button> {
+                width: Fill, height: Fit
+                padding: {top: 8, bottom: 8, left: 12, right: 12}
+                align: {x: 0.0, y: 0.5}
+                draw_bg: {
+                    fn pixel(self) -> vec4 {
+                        return vec4(0.973, 0.980, 0.988, 1.0); // slate-50
+                    }
+                }
+                draw_text: {
+                    text_style: <FONT_REGULAR> { font_size: 10.0 }
+                    fn get_color(self) -> vec4 {
+                        return vec4(0.392, 0.455, 0.545, 1.0); // slate-500
+                    }
+                }
+                text: "Show More >"
+            }
 
-            // Expandable section for additional apps
-            expanded_section = <ExpandableSection> {
-                content = {
-                    app_item_4 = <SidebarMenuItem> {
-                        item_id: app_4
-                        label = { text: "Database" }
-                    }
-                    app_item_5 = <SidebarMenuItem> {
-                        item_id: app_5
-                        label = { text: "Network" }
-                    }
-                    app_item_6 = <SidebarMenuItem> {
-                        item_id: app_6
-                        label = { text: "Metrics" }
-                    }
-                    app_item_7 = <SidebarMenuItem> {
-                        item_id: app_7
-                        label = { text: "Logs" }
-                    }
+            // Collapsible section for additional apps
+            more_apps_section = <View> {
+                width: Fill, height: Fit
+                flow: Down
+                spacing: 2
+                visible: false
+
+                app_btn_4 = <SidebarMenuButton> {
+                    text: "Database"
+                    draw_icon: { svg_file: dep("crate://makepad-widgets/resources/icons/icon_widget.svg") }
+                }
+                app_btn_5 = <SidebarMenuButton> {
+                    text: "Network"
+                    draw_icon: { svg_file: dep("crate://makepad-widgets/resources/icons/icon_vector.svg") }
+                }
+                app_btn_6 = <SidebarMenuButton> {
+                    text: "Metrics"
+                    draw_icon: { svg_file: dep("crate://makepad-widgets/resources/icons/icon_draw.svg") }
+                }
+                app_btn_7 = <SidebarMenuButton> {
+                    text: "Logs"
+                    draw_icon: { svg_file: dep("crate://makepad-widgets/resources/icons/icon_text.svg") }
                 }
             }
         }
@@ -146,9 +165,9 @@ live_design! {
             flow: Down
             padding: { left: 8, right: 8, bottom: 8 }
 
-            settings_item = <SidebarMenuItem> {
-                item_id: settings
-                label = { text: "Settings" }
+            settings_btn = <SidebarMenuButton> {
+                text: "Settings"
+                draw_icon: { svg_file: dep("crate://makepad-widgets/resources/icons/icon_select.svg") }
             }
         }
 
@@ -180,27 +199,48 @@ pub struct ShellSidebar {
     selection: Option<SidebarSelection>,
 
     #[rust]
-    expanded: bool,
+    more_apps_visible: bool,
 }
 
 impl Widget for ShellSidebar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // Capture actions from menu items
+        // Capture actions from child widgets (buttons)
         let actions = cx.capture_actions(|cx| {
             self.view.handle_event(cx, event, scope);
         });
 
-        // Handle menu actions
-        for action in actions.iter() {
-            match action.as_widget_action().cast::<SidebarMenuAction>() {
-                SidebarMenuAction::ItemClicked(id) => {
-                    self.handle_item_click(cx, id, scope);
-                }
-                SidebarMenuAction::ToggleExpand(expanded) => {
-                    self.handle_expand_toggle(cx, expanded);
-                }
-                SidebarMenuAction::None => {}
-            }
+        // Handle Show More/Less click
+        if self.view.button(id!(menu_section.show_more_btn)).clicked(&actions) {
+            self.toggle_more_apps(cx);
+        }
+
+        // Handle app button clicks
+        if self.view.button(id!(menu_section.app_btn_0)).clicked(&actions) {
+            self.handle_selection(cx, SidebarSelection::App(0), scope);
+        }
+        if self.view.button(id!(menu_section.app_btn_1)).clicked(&actions) {
+            self.handle_selection(cx, SidebarSelection::App(1), scope);
+        }
+        if self.view.button(id!(menu_section.app_btn_2)).clicked(&actions) {
+            self.handle_selection(cx, SidebarSelection::App(2), scope);
+        }
+        if self.view.button(id!(menu_section.app_btn_3)).clicked(&actions) {
+            self.handle_selection(cx, SidebarSelection::App(3), scope);
+        }
+        if self.view.button(id!(menu_section.more_apps_section.app_btn_4)).clicked(&actions) {
+            self.handle_selection(cx, SidebarSelection::App(4), scope);
+        }
+        if self.view.button(id!(menu_section.more_apps_section.app_btn_5)).clicked(&actions) {
+            self.handle_selection(cx, SidebarSelection::App(5), scope);
+        }
+        if self.view.button(id!(menu_section.more_apps_section.app_btn_6)).clicked(&actions) {
+            self.handle_selection(cx, SidebarSelection::App(6), scope);
+        }
+        if self.view.button(id!(menu_section.more_apps_section.app_btn_7)).clicked(&actions) {
+            self.handle_selection(cx, SidebarSelection::App(7), scope);
+        }
+        if self.view.button(id!(bottom_section.settings_btn)).clicked(&actions) {
+            self.handle_selection(cx, SidebarSelection::Settings, scope);
         }
     }
 
@@ -214,90 +254,84 @@ impl Widget for ShellSidebar {
 }
 
 impl ShellSidebar {
-    fn handle_item_click(&mut self, cx: &mut Cx, id: LiveId, scope: &mut Scope) {
+    fn toggle_more_apps(&mut self, cx: &mut Cx) {
+        self.more_apps_visible = !self.more_apps_visible;
+
+        // Toggle visibility
+        self.view.view(id!(menu_section.more_apps_section))
+            .set_visible(cx, self.more_apps_visible);
+
+        // Update button text
+        if self.more_apps_visible {
+            self.view.button(id!(menu_section.show_more_btn))
+                .set_text(cx, "Show Less ^");
+        } else {
+            self.view.button(id!(menu_section.show_more_btn))
+                .set_text(cx, "Show More >");
+        }
+
+        self.view.redraw(cx);
+    }
+
+    fn handle_selection(&mut self, cx: &mut Cx, selection: SidebarSelection, scope: &mut Scope) {
         // Clear all selections first
         self.clear_all_selections(cx);
 
-        // Determine selection based on clicked ID
-        let selection = match id {
-            id if id == live_id!(app_0) => Some(SidebarSelection::App(0)),
-            id if id == live_id!(app_1) => Some(SidebarSelection::App(1)),
-            id if id == live_id!(app_2) => Some(SidebarSelection::App(2)),
-            id if id == live_id!(app_3) => Some(SidebarSelection::App(3)),
-            id if id == live_id!(app_4) => Some(SidebarSelection::App(4)),
-            id if id == live_id!(app_5) => Some(SidebarSelection::App(5)),
-            id if id == live_id!(app_6) => Some(SidebarSelection::App(6)),
-            id if id == live_id!(app_7) => Some(SidebarSelection::App(7)),
-            id if id == live_id!(settings) => Some(SidebarSelection::Settings),
-            _ => None,
-        };
+        // Apply selection
+        self.apply_selection(cx, &selection);
+        self.selection = Some(selection.clone());
 
-        if let Some(ref sel) = selection {
-            // Apply selection styling
-            self.apply_selection(cx, sel);
-            self.selection = selection.clone();
+        // Emit action to parent
+        cx.widget_action(
+            self.widget_uid(),
+            &scope.path,
+            SidebarAction::SelectionChanged(Some(selection)),
+        );
 
-            // Emit action to parent
-            cx.widget_action(
-                self.widget_uid(),
-                &scope.path,
-                SidebarAction::SelectionChanged(selection),
-            );
-        }
-    }
-
-    fn handle_expand_toggle(&mut self, cx: &mut Cx, expanded: bool) {
-        self.expanded = expanded;
-
-        // Calculate content height (4 items * 36px height + spacing)
-        let content_height = 4.0 * 36.0 + 4.0 * 4.0;
-
-        self.view
-            .expandable_section(id!(menu_section.expanded_section))
-            .set_expanded(cx, expanded, content_height);
+        self.view.redraw(cx);
     }
 
     fn clear_all_selections(&mut self, cx: &mut Cx) {
-        // Clear all app items
-        self.view.sidebar_menu_item(id!(menu_section.app_item_0)).set_selected(cx, false);
-        self.view.sidebar_menu_item(id!(menu_section.app_item_1)).set_selected(cx, false);
-        self.view.sidebar_menu_item(id!(menu_section.app_item_2)).set_selected(cx, false);
-        self.view.sidebar_menu_item(id!(menu_section.app_item_3)).set_selected(cx, false);
-        self.view.sidebar_menu_item(id!(menu_section.expanded_section.content.app_item_4)).set_selected(cx, false);
-        self.view.sidebar_menu_item(id!(menu_section.expanded_section.content.app_item_5)).set_selected(cx, false);
-        self.view.sidebar_menu_item(id!(menu_section.expanded_section.content.app_item_6)).set_selected(cx, false);
-        self.view.sidebar_menu_item(id!(menu_section.expanded_section.content.app_item_7)).set_selected(cx, false);
-        self.view.sidebar_menu_item(id!(bottom_section.settings_item)).set_selected(cx, false);
+        // Clear all app buttons
+        self.view.button(id!(menu_section.app_btn_0)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
+        self.view.button(id!(menu_section.app_btn_1)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
+        self.view.button(id!(menu_section.app_btn_2)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
+        self.view.button(id!(menu_section.app_btn_3)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
+        self.view.button(id!(menu_section.more_apps_section.app_btn_4)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
+        self.view.button(id!(menu_section.more_apps_section.app_btn_5)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
+        self.view.button(id!(menu_section.more_apps_section.app_btn_6)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
+        self.view.button(id!(menu_section.more_apps_section.app_btn_7)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
+        self.view.button(id!(bottom_section.settings_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
     }
 
     fn apply_selection(&mut self, cx: &mut Cx, selection: &SidebarSelection) {
         match selection {
             SidebarSelection::App(0) => {
-                self.view.sidebar_menu_item(id!(menu_section.app_item_0)).set_selected(cx, true);
+                self.view.button(id!(menu_section.app_btn_0)).apply_over(cx, live!{ draw_bg: { selected: 1.0 } });
             }
             SidebarSelection::App(1) => {
-                self.view.sidebar_menu_item(id!(menu_section.app_item_1)).set_selected(cx, true);
+                self.view.button(id!(menu_section.app_btn_1)).apply_over(cx, live!{ draw_bg: { selected: 1.0 } });
             }
             SidebarSelection::App(2) => {
-                self.view.sidebar_menu_item(id!(menu_section.app_item_2)).set_selected(cx, true);
+                self.view.button(id!(menu_section.app_btn_2)).apply_over(cx, live!{ draw_bg: { selected: 1.0 } });
             }
             SidebarSelection::App(3) => {
-                self.view.sidebar_menu_item(id!(menu_section.app_item_3)).set_selected(cx, true);
+                self.view.button(id!(menu_section.app_btn_3)).apply_over(cx, live!{ draw_bg: { selected: 1.0 } });
             }
             SidebarSelection::App(4) => {
-                self.view.sidebar_menu_item(id!(menu_section.expanded_section.content.app_item_4)).set_selected(cx, true);
+                self.view.button(id!(menu_section.more_apps_section.app_btn_4)).apply_over(cx, live!{ draw_bg: { selected: 1.0 } });
             }
             SidebarSelection::App(5) => {
-                self.view.sidebar_menu_item(id!(menu_section.expanded_section.content.app_item_5)).set_selected(cx, true);
+                self.view.button(id!(menu_section.more_apps_section.app_btn_5)).apply_over(cx, live!{ draw_bg: { selected: 1.0 } });
             }
             SidebarSelection::App(6) => {
-                self.view.sidebar_menu_item(id!(menu_section.expanded_section.content.app_item_6)).set_selected(cx, true);
+                self.view.button(id!(menu_section.more_apps_section.app_btn_6)).apply_over(cx, live!{ draw_bg: { selected: 1.0 } });
             }
             SidebarSelection::App(7) => {
-                self.view.sidebar_menu_item(id!(menu_section.expanded_section.content.app_item_7)).set_selected(cx, true);
+                self.view.button(id!(menu_section.more_apps_section.app_btn_7)).apply_over(cx, live!{ draw_bg: { selected: 1.0 } });
             }
             SidebarSelection::Settings => {
-                self.view.sidebar_menu_item(id!(bottom_section.settings_item)).set_selected(cx, true);
+                self.view.button(id!(bottom_section.settings_btn)).apply_over(cx, live!{ draw_bg: { selected: 1.0 } });
             }
             _ => {}
         }
@@ -321,20 +355,6 @@ impl ShellSidebar {
         self.view.view(id!(separator)).apply_over(cx, live! {
             draw_bg: { dark_mode: (dark_mode) }
         });
-
-        // Menu items
-        self.view.sidebar_menu_item(id!(menu_section.app_item_0)).apply_dark_mode(cx, dark_mode);
-        self.view.sidebar_menu_item(id!(menu_section.app_item_1)).apply_dark_mode(cx, dark_mode);
-        self.view.sidebar_menu_item(id!(menu_section.app_item_2)).apply_dark_mode(cx, dark_mode);
-        self.view.sidebar_menu_item(id!(menu_section.app_item_3)).apply_dark_mode(cx, dark_mode);
-        self.view.sidebar_menu_item(id!(menu_section.expanded_section.content.app_item_4)).apply_dark_mode(cx, dark_mode);
-        self.view.sidebar_menu_item(id!(menu_section.expanded_section.content.app_item_5)).apply_dark_mode(cx, dark_mode);
-        self.view.sidebar_menu_item(id!(menu_section.expanded_section.content.app_item_6)).apply_dark_mode(cx, dark_mode);
-        self.view.sidebar_menu_item(id!(menu_section.expanded_section.content.app_item_7)).apply_dark_mode(cx, dark_mode);
-        self.view.sidebar_menu_item(id!(bottom_section.settings_item)).apply_dark_mode(cx, dark_mode);
-
-        // Show more button
-        self.view.show_more_button(id!(menu_section.show_more_btn)).apply_dark_mode(cx, dark_mode);
     }
 }
 
@@ -377,3 +397,4 @@ pub enum SidebarAction {
     None,
 }
 
+// ShellSidebarWidgetExt trait is auto-generated by #[derive(Widget)]
