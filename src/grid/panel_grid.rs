@@ -2,11 +2,18 @@
 //!
 //! Manages a grid of Panel widgets with drag-and-drop support.
 
+use std::cell::RefCell;
 use makepad_widgets::*;
 use crate::panel::PanelAction;
 use crate::panel::panel::PanelWidgetExt;
 use crate::grid::drop_handler::{DropPosition, calculate_drop_position};
 use crate::grid::layout_state::LayoutState;
+
+// Thread-local storage for pending layout state (used when set_layout_state is called before first draw)
+thread_local! {
+    static PENDING_LAYOUT: RefCell<Option<LayoutState>> = RefCell::new(None);
+    static PENDING_RESET: RefCell<bool> = RefCell::new(false);
+}
 
 live_design! {
     use link::theme::*;
@@ -110,7 +117,7 @@ live_design! {
 /// Container widget managing a grid of Panel widgets with drag-and-drop support.
 ///
 /// ## Layout Model
-/// Uses `LayoutState` with `row_assignments: Vec<Vec<u64>>` as the source of truth.
+/// Uses `LayoutState` with `row_assignments: Vec<Vec<String>>` as the source of truth.
 /// Each row maintains its own list of panel IDs, enabling true physical movement
 /// of panels between rows.
 ///
@@ -143,13 +150,18 @@ pub struct PanelGrid {
     #[rust]
     needs_layout_update: bool,
 
-    /// Currently dragging panel ID
+    /// Currently dragging panel ID (semantic string ID)
     #[rust]
-    dragging_panel: Option<u64>,
+    dragging_panel: Option<String>,
 
     /// Current drop target position
     #[rust]
     drop_state: Option<DropPosition>,
+}
+
+/// Helper to convert string panel ID to LiveId
+fn panel_id_to_live_id(panel_id: &str) -> LiveId {
+    LiveId::from_str_lc(panel_id)
 }
 
 impl Widget for PanelGrid {
@@ -158,20 +170,46 @@ impl Widget for PanelGrid {
             self.view.handle_event(cx, event, scope);
         });
 
+        let mut layout_changed = false;
+
         // Handle Panel actions
         for action in actions.iter() {
             match action.as_widget_action().cast::<PanelAction>() {
                 PanelAction::Close(id) => {
-                    self.close_panel(cx, id.0);
+                    // Find panel by LiveId and close it
+                    if let Some(panel_id) = self.find_panel_by_live_id(id) {
+                        self.close_panel(cx, &panel_id);
+                        layout_changed = true;
+                    }
                 }
                 PanelAction::Maximize(id) => {
-                    self.toggle_maximize(cx, id.0);
+                    if let Some(panel_id) = self.find_panel_by_live_id(id) {
+                        self.toggle_maximize(cx, &panel_id);
+                        layout_changed = true;
+                    }
                 }
                 PanelAction::Fullscreen(_) => {
                     // Fullscreen is handled by FooterGrid, not main PanelGrid
                 }
                 PanelAction::StartDrag(id) => {
-                    self.dragging_panel = Some(id.0);
+                    if let Some(panel_id) = self.find_panel_by_live_id(id) {
+                        self.dragging_panel = Some(panel_id);
+                    }
+                }
+                PanelAction::EndDrag(id, abs) => {
+                    // Complete the drop operation
+                    if let Some(panel_id) = self.find_panel_by_live_id(id) {
+                        if self.dragging_panel.as_deref() == Some(&panel_id) {
+                            self.handle_drop(cx, abs, &panel_id);
+                            layout_changed = true;
+                        }
+                    }
+                    self.dragging_panel = None;
+                    self.drop_state = None;
+                    self.view.redraw(cx);
+                }
+                PanelAction::LayoutChanged(_) | PanelAction::FooterLayoutChanged(_) | PanelAction::ResetLayout => {
+                    // Ignore - we emit these or handle via thread-local
                 }
                 PanelAction::None => {}
             }
@@ -188,23 +226,49 @@ impl Widget for PanelGrid {
                 }
                 self.view.redraw(cx);
             }
-            Hit::FingerUp(fe) => {
-                if let Some(dragged_id) = self.dragging_panel {
-                    self.handle_drop(cx, fe.abs, dragged_id);
-                }
+            Hit::FingerUp(_) => {
+                // Clear state on any FingerUp as fallback
+                // (actual drop is handled via EndDrag action from Panel)
                 self.dragging_panel = None;
                 self.drop_state = None;
                 self.view.redraw(cx);
             }
             _ => {}
         }
+
+        // Emit layout changed action if needed
+        if layout_changed {
+            cx.widget_action(
+                self.widget_uid(),
+                &scope.path,
+                PanelAction::LayoutChanged(self.layout_state.clone()),
+            );
+        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // Check for pending reset
+        let should_reset = PENDING_RESET.with(|p| {
+            let val = *p.borrow();
+            if val { *p.borrow_mut() = false; }
+            val
+        });
+        if should_reset {
+            self.layout_state = LayoutState::default();
+            self.needs_layout_update = true;
+        }
+
         // Initialize on first draw
         if !self.initialized {
             self.initialized = true;
-            self.layout_state = LayoutState::default();
+
+            // Check for pending layout from set_layout_state called before first draw
+            let pending = PENDING_LAYOUT.with(|p| p.borrow_mut().take());
+            if let Some(state) = pending {
+                self.layout_state = state;
+            } else {
+                self.layout_state = LayoutState::default();
+            }
             self.needs_layout_update = true;
         }
 
@@ -235,29 +299,35 @@ impl PanelGrid {
     /// Set layout state (for restoring from persistence)
     pub fn set_layout_state(&mut self, cx: &mut Cx, state: LayoutState) {
         self.layout_state = state;
+        self.initialized = true;
         self.needs_layout_update = true;
         self.view.redraw(cx);
     }
 
-    /// Close a panel
-    fn close_panel(&mut self, cx: &mut Cx, panel_id: u64) {
-        self.layout_state.close_panel(panel_id);
-
-        // If closing the maximized panel, exit maximize mode
-        if self.layout_state.maximized_panel == Some(panel_id) {
-            self.layout_state.maximized_panel = None;
+    /// Find panel string ID by LiveId (reverse lookup through visible panels)
+    fn find_panel_by_live_id(&self, id: LiveId) -> Option<String> {
+        // Check all visible panels for matching LiveId
+        for panel_id in &self.layout_state.visible_panels {
+            if panel_id_to_live_id(panel_id) == id {
+                return Some(panel_id.clone());
+            }
         }
+        None
+    }
 
+    /// Close a panel
+    fn close_panel(&mut self, cx: &mut Cx, panel_id: &str) {
+        self.layout_state.close_panel(panel_id);
         self.needs_layout_update = true;
         self.view.redraw(cx);
     }
 
     /// Toggle maximize state for a panel
-    fn toggle_maximize(&mut self, cx: &mut Cx, panel_id: u64) {
-        if self.layout_state.maximized_panel == Some(panel_id) {
+    fn toggle_maximize(&mut self, cx: &mut Cx, panel_id: &str) {
+        if self.layout_state.maximized_panel.as_deref() == Some(panel_id) {
             self.layout_state.maximized_panel = None;
         } else {
-            self.layout_state.maximized_panel = Some(panel_id);
+            self.layout_state.maximized_panel = Some(panel_id.to_string());
         }
         self.needs_layout_update = true;
         self.view.redraw(cx);
@@ -266,7 +336,7 @@ impl PanelGrid {
     /// Find the drop position based on cursor location
     fn find_drop_position(&self, cx: &Cx, abs: DVec2) -> Option<DropPosition> {
         // Get visible panels per row
-        let rows_with_panels: Vec<Vec<u64>> = (0..3)
+        let rows_with_panels: Vec<Vec<String>> = (0..3)
             .map(|r| self.layout_state.visible_in_row(r))
             .filter(|row| !row.is_empty())
             .collect();
@@ -287,7 +357,7 @@ impl PanelGrid {
     }
 
     /// Handle a drop operation - move panel to new row/position
-    fn handle_drop(&mut self, cx: &mut Cx, abs: DVec2, dragged_panel_id: u64) {
+    fn handle_drop(&mut self, cx: &mut Cx, abs: DVec2, dragged_panel_id: &str) {
         let Some(drop_pos) = self.find_drop_position(cx, abs) else {
             return;
         };
@@ -295,6 +365,22 @@ impl PanelGrid {
         self.layout_state.move_panel(dragged_panel_id, drop_pos.row, drop_pos.col);
         self.needs_layout_update = true;
         self.view.redraw(cx);
+    }
+
+    /// Get panel index from panel ID (extracts number from "panel_N" format)
+    fn panel_index_from_id(panel_id: &str) -> usize {
+        // Try to extract index from "panel_N" format
+        if let Some(suffix) = panel_id.strip_prefix("panel_") {
+            if let Ok(idx) = suffix.parse::<usize>() {
+                return idx;
+            }
+        }
+        // Fallback: hash the string to get a consistent index
+        let mut hash: usize = 0;
+        for byte in panel_id.bytes() {
+            hash = hash.wrapping_mul(31).wrapping_add(byte as usize);
+        }
+        hash % 9
     }
 
     /// Apply row-based layout using visibility and Fill sizing
@@ -343,7 +429,7 @@ impl PanelGrid {
         ];
 
         // Get visible panels per row
-        let visible_per_row: [Vec<u64>; 3] = [
+        let visible_per_row: [Vec<String>; 3] = [
             self.layout_state.visible_in_row(0),
             self.layout_state.visible_in_row(1),
             self.layout_state.visible_in_row(2),
@@ -354,7 +440,7 @@ impl PanelGrid {
         const SLOTS_PER_ROW: usize = 9;
 
         // Handle maximized panel
-        if let Some(max_id) = self.layout_state.maximized_panel {
+        if let Some(ref max_id) = self.layout_state.maximized_panel.clone() {
             // Hide all slots and rows first
             for row_idx in 0..3 {
                 for slot_idx in 0..SLOTS_PER_ROW {
@@ -378,8 +464,8 @@ impl PanelGrid {
                 self.view.view(row_slot_ids[row_idx][0]).apply_over(cx, live! {
                     visible: true, width: Fill, height: Fill
                 });
-                self.view.panel(row_slot_ids[row_idx][0]).set_panel_id(LiveId(max_id));
-                self.view.panel(row_slot_ids[row_idx][0]).set_panel_index(cx, max_id as usize);
+                self.view.panel(row_slot_ids[row_idx][0]).set_panel_id_str(max_id);
+                self.view.panel(row_slot_ids[row_idx][0]).set_panel_index(cx, Self::panel_index_from_id(max_id));
                 self.view.panel(row_slot_ids[row_idx][0]).set_maximized(true);
             }
             return;
@@ -402,15 +488,15 @@ impl PanelGrid {
             // Find the only visible panel
             for row_idx in 0..3 {
                 if !visible_per_row[row_idx].is_empty() {
-                    let panel_id = visible_per_row[row_idx][0];
+                    let panel_id = &visible_per_row[row_idx][0];
                     self.view.view(row_view_ids[row_idx]).apply_over(cx, live! {
                         visible: true, height: Fill
                     });
                     self.view.view(row_slot_ids[row_idx][0]).apply_over(cx, live! {
                         visible: true, width: Fill, height: Fill
                     });
-                    self.view.panel(row_slot_ids[row_idx][0]).set_panel_id(LiveId(panel_id));
-                    self.view.panel(row_slot_ids[row_idx][0]).set_panel_index(cx, panel_id as usize);
+                    self.view.panel(row_slot_ids[row_idx][0]).set_panel_id_str(panel_id);
+                    self.view.panel(row_slot_ids[row_idx][0]).set_panel_index(cx, Self::panel_index_from_id(panel_id));
                     break;
                 }
             }
@@ -444,12 +530,12 @@ impl PanelGrid {
                 });
 
                 // Show slots for panels in this row
-                for (slot_idx, &panel_id) in panels_in_row.iter().take(SLOTS_PER_ROW).enumerate() {
+                for (slot_idx, panel_id) in panels_in_row.iter().take(SLOTS_PER_ROW).enumerate() {
                     self.view.view(row_slot_ids[row_idx][slot_idx]).apply_over(cx, live! {
                         visible: true, width: Fill, height: Fill
                     });
-                    self.view.panel(row_slot_ids[row_idx][slot_idx]).set_panel_id(LiveId(panel_id));
-                    self.view.panel(row_slot_ids[row_idx][slot_idx]).set_panel_index(cx, panel_id as usize);
+                    self.view.panel(row_slot_ids[row_idx][slot_idx]).set_panel_id_str(panel_id);
+                    self.view.panel(row_slot_ids[row_idx][slot_idx]).set_panel_index(cx, Self::panel_index_from_id(panel_id));
                 }
             }
         }
@@ -463,9 +549,14 @@ impl PanelGridRef {
     }
 
     /// Set layout state (for restoring from persistence)
+    ///
+    /// Note: If called before first draw, stores the state to be applied during initialization.
     pub fn set_layout_state(&self, cx: &mut Cx, state: LayoutState) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_layout_state(cx, state);
+        } else {
+            // Store in thread-local for retrieval during first draw
+            PENDING_LAYOUT.with(|p| *p.borrow_mut() = Some(state));
         }
     }
 
@@ -475,6 +566,10 @@ impl PanelGridRef {
             inner.layout_state = LayoutState::default();
             inner.needs_layout_update = true;
             inner.view.redraw(cx);
+        } else {
+            // Store reset flag for retrieval during next draw
+            PENDING_RESET.with(|p| *p.borrow_mut() = true);
+            cx.redraw_all();
         }
     }
 

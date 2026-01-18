@@ -5,7 +5,7 @@
 use std::fs;
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
-use crate::grid::{LayoutState, SplitterPositions};
+use crate::grid::{LayoutState, FooterLayoutState, SplitterPositions};
 
 /// Shell preferences for persistence
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -13,8 +13,11 @@ pub struct ShellPreferences {
     /// Dark mode preference
     pub dark_mode: bool,
 
-    /// Saved layout state
+    /// Saved layout state (main panel grid)
     pub layout: Option<LayoutState>,
+
+    /// Saved footer layout state
+    pub footer_layout: Option<FooterLayoutState>,
 
     /// Saved splitter positions
     pub splitter_positions: Option<SplitterPositions>,

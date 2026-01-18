@@ -318,26 +318,11 @@ live_design! {
             }
         }
 
-        // Content area
+        // Content area - empty slot for user content injection
         content = <View> {
             width: Fill
             height: Fill
-            padding: 12
-            align: { x: 0.5, y: 0.5 }
-
-            content_label = <Label> {
-                draw_text: {
-                    instance dark_mode: 0.0
-                    text_style: <FONT_SEMIBOLD> { font_size: 24.0 }
-                    fn get_color(self) -> vec4 {
-                        // Light: gray-300, Dark: slate-600
-                        let light = vec4(0.796, 0.835, 0.882, 1.0);
-                        let dark = vec4(0.278, 0.333, 0.412, 1.0);
-                        return mix(light, dark, self.dark_mode);
-                    }
-                }
-                text: "#1"
-            }
+            // Empty - content injected at runtime or via live_design
         }
     }
 }
@@ -347,8 +332,14 @@ pub struct Panel {
     #[deref]
     view: View,
 
+    /// LiveId for internal identification (hash of panel_id_str)
     #[rust]
     panel_id: LiveId,
+
+    /// Semantic string ID for this panel (e.g., "editor", "console")
+    /// This is stored separately because LiveId is a hash and can't be reversed
+    #[rust]
+    panel_id_str: String,
 
     #[live]
     title: String,
@@ -379,12 +370,19 @@ pub struct Panel {
 
     #[rust]
     needs_visual_update: bool,
+
+    /// Reference to user-provided content widget (for programmatic injection)
+    #[rust]
+    content_widget: Option<WidgetRef>,
 }
 
 impl Widget for Panel {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let actions = cx.capture_actions(|cx| {
-            self.view.handle_event(cx, event, scope);
+        // Push panel ID to scope path so content can identify which panel it's in
+        let actions = scope.with_id(self.panel_id, |scope| {
+            cx.capture_actions(|cx| {
+                self.view.handle_event(cx, event, scope);
+            })
         });
 
         if self.view.button(id!(title_bar.close_btn)).clicked(&actions) {
@@ -438,7 +436,14 @@ impl Widget for Panel {
                 }
                 handled = true;
             }
-            Hit::FingerUp(_) => {
+            Hit::FingerUp(fe) => {
+                if self.is_dragging {
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        PanelAction::EndDrag(self.panel_id, fe.abs),
+                    );
+                }
                 self.is_dragging = false;
                 handled = true;
             }
@@ -462,7 +467,14 @@ impl Widget for Panel {
                         );
                     }
                 }
-                Hit::FingerUp(_) => {
+                Hit::FingerUp(fe) => {
+                    if self.is_dragging {
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &scope.path,
+                            PanelAction::EndDrag(self.panel_id, fe.abs),
+                        );
+                    }
                     self.is_dragging = false;
                 }
                 _ => {}
@@ -484,7 +496,11 @@ impl Widget for Panel {
         // Close button
         self.view.button(id!(title_bar.close_btn)).set_visible(cx, self.closable);
 
-        self.view.draw_walk(cx, scope, walk)
+        // Draw with panel ID in scope path so content can identify which panel it's in
+        // Content widgets can access panel ID via: scope.path.from_end(0)
+        scope.with_id(self.panel_id, |scope| {
+            self.view.draw_walk(cx, scope, walk)
+        })
     }
 }
 
@@ -502,12 +518,33 @@ impl Panel {
         self.panel_id = id;
     }
 
+    /// Set both the LiveId and string ID for this panel
+    pub fn set_panel_id_str(&mut self, id_str: &str) {
+        self.panel_id_str = id_str.to_string();
+        self.panel_id = LiveId::from_str_lc(id_str);
+    }
+
+    /// Get the semantic string ID for this panel
+    pub fn panel_id_str(&self) -> &str {
+        &self.panel_id_str
+    }
+
     pub fn set_maximized(&mut self, maximized: bool) {
         self.is_maximized = maximized;
     }
 
     pub fn set_fullscreen(&mut self, fullscreen: bool) {
         self.is_fullscreen = fullscreen;
+    }
+
+    /// Set custom content widget for this panel
+    pub fn set_content(&mut self, widget: WidgetRef) {
+        self.content_widget = Some(widget);
+    }
+
+    /// Get the content area view for adding children
+    pub fn content_view(&self) -> ViewRef {
+        self.view.view(id!(content))
     }
 
     fn apply_visual_update(&mut self, cx: &mut Cx2d) {
@@ -530,9 +567,6 @@ impl Panel {
             self.title.clone()
         };
         self.view.label(id!(title_bar.title)).set_text(cx, &title);
-
-        let content = format!("#{}", index + 1);
-        self.view.label(id!(content.content_label)).set_text(cx, &content);
     }
 }
 
@@ -547,6 +581,18 @@ impl PanelRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_panel_id(id);
         }
+    }
+
+    /// Set both the LiveId and string ID for this panel
+    pub fn set_panel_id_str(&self, id_str: &str) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_panel_id_str(id_str);
+        }
+    }
+
+    /// Get the semantic string ID for this panel
+    pub fn panel_id_str(&self) -> Option<String> {
+        self.borrow().map(|inner| inner.panel_id_str().to_string())
     }
 
     pub fn set_maximized(&self, maximized: bool) {
@@ -567,5 +613,17 @@ impl PanelRef {
                 draw_bg: { dark_mode: (dark_mode) }
             });
         }
+    }
+
+    /// Set custom content widget for this panel
+    pub fn set_content(&self, widget: WidgetRef) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_content(widget);
+        }
+    }
+
+    /// Get the content area view for adding children
+    pub fn content_view(&self) -> Option<ViewRef> {
+        self.borrow().map(|inner| inner.content_view())
     }
 }

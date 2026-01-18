@@ -40,26 +40,12 @@ live_design! {
                     return mix(light, dark, self.dark_mode);
                 }
             }
-            text: "Flex App Layout Shell"
-        }
-
-        subtitle_label = <Label> {
-            draw_text: {
-                instance dark_mode: 0.0
-                text_style: <FONT_REGULAR> { font_size: 11.0 }
-                fn get_color(self) -> vec4 {
-                    // Light: gray-500, Dark: slate-400
-                    let light = vec4(0.420, 0.447, 0.502, 1.0);
-                    let dark = vec4(0.580, 0.639, 0.722, 1.0);
-                    return mix(light, dark, self.dark_mode);
-                }
-            }
-            text: "Makepad Resizable Layout"
+            text: "Makepad Flex App Layout Shell"
         }
 
         <View> { width: Fill }
 
-        // Reset layout button
+        // Reset layout button (undo arrow with window)
         reset_btn = <Button> {
             width: 28
             height: 28
@@ -68,63 +54,54 @@ live_design! {
 
             draw_bg: {
                 instance dark_mode: 0.0
+                instance anim_progress: 0.0
 
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                     let cx = self.rect_size.x * 0.5;
                     let cy = self.rect_size.y * 0.5;
 
-                    // Stroke color
+                    // Stroke color with animation flash
                     let light_stroke = vec4(0.122, 0.161, 0.216, 1.0);
                     let dark_stroke = vec4(0.945, 0.961, 0.976, 1.0);
                     let hover_stroke = vec4(0.231, 0.510, 0.965, 1.0);
+                    let success_stroke = vec4(0.22, 0.80, 0.46, 1.0);  // green
                     let base = mix(light_stroke, dark_stroke, self.dark_mode);
-                    let stroke = mix(base, hover_stroke, self.hover);
-                    let line_width = 1.5;
+                    let hovered = mix(base, hover_stroke, self.hover);
+                    let stroke = mix(hovered, success_stroke, self.anim_progress);
+                    let line_width = 1.4;
 
-                    // Draw circular arrow (reset icon) - arc using line segments
-                    let r = 7.0;
+                    // Scale to fit 28x28 (original is 32x32)
+                    let s = 0.7;
+                    let ox = cx - 16.0 * s;
+                    let oy = cy - 16.0 * s;
 
-                    // Draw arc manually (no loops in shaders)
-                    // Arc from ~-30 deg to ~240 deg (about 3/4 circle)
-                    sdf.move_to(cx + r * 0.866, cy - r * 0.5);  // -30 deg
-                    sdf.line_to(cx + r * 0.5, cy - r * 0.866);  // -60 deg
+                    // Arrow pointing left (from path: M9 3 L3 9 L9 15)
+                    // Arrow shaft from box to left
+                    sdf.move_to(ox + 27.0 * s, oy + 8.0 * s);
+                    sdf.line_to(ox + 7.0 * s, oy + 8.0 * s);
                     sdf.stroke(stroke, line_width);
 
-                    sdf.move_to(cx + r * 0.5, cy - r * 0.866);
-                    sdf.line_to(cx, cy - r);  // -90 deg (top)
+                    // Arrow head
+                    sdf.move_to(ox + 10.0 * s, oy + 4.0 * s);
+                    sdf.line_to(ox + 4.0 * s, oy + 9.0 * s);
+                    sdf.line_to(ox + 10.0 * s, oy + 14.0 * s);
                     sdf.stroke(stroke, line_width);
 
-                    sdf.move_to(cx, cy - r);
-                    sdf.line_to(cx - r * 0.5, cy - r * 0.866);
+                    // Box/window (right side, going down then left then up)
+                    // Right edge down
+                    sdf.move_to(ox + 27.0 * s, oy + 10.0 * s);
+                    sdf.line_to(ox + 27.0 * s, oy + 26.0 * s);
                     sdf.stroke(stroke, line_width);
 
-                    sdf.move_to(cx - r * 0.5, cy - r * 0.866);
-                    sdf.line_to(cx - r * 0.866, cy - r * 0.5);
+                    // Bottom edge
+                    sdf.move_to(ox + 27.0 * s, oy + 26.0 * s);
+                    sdf.line_to(ox + 7.0 * s, oy + 26.0 * s);
                     sdf.stroke(stroke, line_width);
 
-                    sdf.move_to(cx - r * 0.866, cy - r * 0.5);
-                    sdf.line_to(cx - r, cy);  // 180 deg (left)
-                    sdf.stroke(stroke, line_width);
-
-                    sdf.move_to(cx - r, cy);
-                    sdf.line_to(cx - r * 0.866, cy + r * 0.5);
-                    sdf.stroke(stroke, line_width);
-
-                    sdf.move_to(cx - r * 0.866, cy + r * 0.5);
-                    sdf.line_to(cx - r * 0.5, cy + r * 0.866);
-                    sdf.stroke(stroke, line_width);
-
-                    sdf.move_to(cx - r * 0.5, cy + r * 0.866);
-                    sdf.line_to(cx, cy + r);  // 270 deg (bottom)
-                    sdf.stroke(stroke, line_width);
-
-                    // Arrow head at top right
-                    let ax = cx + r * 0.866;
-                    let ay = cy - r * 0.5;
-                    sdf.move_to(ax - 2.0, ay - 4.0);
-                    sdf.line_to(ax, ay);
-                    sdf.line_to(ax + 4.0, ay - 2.0);
+                    // Left edge up (partial)
+                    sdf.move_to(ox + 7.0 * s, oy + 26.0 * s);
+                    sdf.line_to(ox + 7.0 * s, oy + 19.0 * s);
                     sdf.stroke(stroke, line_width);
 
                     return sdf.result;
@@ -141,18 +118,21 @@ live_design! {
 
             draw_bg: {
                 instance dark_mode: 0.0
+                instance anim_progress: 0.0
 
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                     let cx = self.rect_size.x * 0.5;
                     let cy = self.rect_size.y * 0.5;
 
-                    // Stroke color
+                    // Stroke color with animation flash
                     let light_stroke = vec4(0.122, 0.161, 0.216, 1.0);
                     let dark_stroke = vec4(0.945, 0.961, 0.976, 1.0);
                     let hover_stroke = vec4(0.231, 0.510, 0.965, 1.0);
+                    let success_stroke = vec4(0.22, 0.80, 0.46, 1.0);  // green
                     let base = mix(light_stroke, dark_stroke, self.dark_mode);
-                    let stroke = mix(base, hover_stroke, self.hover);
+                    let hovered = mix(base, hover_stroke, self.hover);
+                    let stroke = mix(hovered, success_stroke, self.anim_progress);
                     let line_width = 1.5;
 
                     // Draw download/save icon
@@ -285,6 +265,14 @@ pub enum ShellHeaderAction {
     None,
 }
 
+/// Animation state for button feedback
+#[derive(Clone, Debug, Default)]
+pub struct ButtonAnimState {
+    pub animating: bool,
+    pub start_time: f64,
+    pub progress: f64,
+}
+
 /// Shell header widget
 #[derive(Live, LiveHook, Widget)]
 pub struct ShellHeader {
@@ -294,8 +282,11 @@ pub struct ShellHeader {
     #[live]
     title: String,
 
-    #[live]
-    subtitle: String,
+    #[rust]
+    save_anim: ButtonAnimState,
+
+    #[rust]
+    reset_anim: ButtonAnimState,
 }
 
 impl Widget for ShellHeader {
@@ -313,6 +304,12 @@ impl Widget for ShellHeader {
         }
 
         if self.view.button(id!(reset_btn)).clicked(&actions) {
+            // Start reset animation
+            self.reset_anim.animating = true;
+            self.reset_anim.start_time = Cx::time_now();
+            self.reset_anim.progress = 1.0;
+            cx.new_next_frame();
+
             cx.widget_action(
                 self.widget_uid(),
                 &scope.path,
@@ -321,20 +318,75 @@ impl Widget for ShellHeader {
         }
 
         if self.view.button(id!(save_btn)).clicked(&actions) {
+            // Start save animation
+            self.save_anim.animating = true;
+            self.save_anim.start_time = Cx::time_now();
+            self.save_anim.progress = 1.0;
+            cx.new_next_frame();
+
             cx.widget_action(
                 self.widget_uid(),
                 &scope.path,
                 ShellHeaderAction::SaveLayout,
             );
         }
+
+        // Update animations
+        if let Event::NextFrame(_) = event {
+            let mut needs_redraw = false;
+            let duration = 1.2;  // Animation duration in seconds
+
+            if self.save_anim.animating {
+                let elapsed = Cx::time_now() - self.save_anim.start_time;
+                if elapsed < duration {
+                    // Ease out cubic
+                    let t = elapsed / duration;
+                    self.save_anim.progress = 1.0 - (t * t * t);
+                    self.view.button(id!(save_btn)).apply_over(cx, live! {
+                        draw_bg: { anim_progress: (self.save_anim.progress) }
+                    });
+                    cx.new_next_frame();
+                    needs_redraw = true;
+                } else {
+                    self.save_anim.animating = false;
+                    self.save_anim.progress = 0.0;
+                    self.view.button(id!(save_btn)).apply_over(cx, live! {
+                        draw_bg: { anim_progress: 0.0 }
+                    });
+                    needs_redraw = true;
+                }
+            }
+
+            if self.reset_anim.animating {
+                let elapsed = Cx::time_now() - self.reset_anim.start_time;
+                if elapsed < duration {
+                    // Ease out cubic
+                    let t = elapsed / duration;
+                    self.reset_anim.progress = 1.0 - (t * t * t);
+                    self.view.button(id!(reset_btn)).apply_over(cx, live! {
+                        draw_bg: { anim_progress: (self.reset_anim.progress) }
+                    });
+                    cx.new_next_frame();
+                    needs_redraw = true;
+                } else {
+                    self.reset_anim.animating = false;
+                    self.reset_anim.progress = 0.0;
+                    self.view.button(id!(reset_btn)).apply_over(cx, live! {
+                        draw_bg: { anim_progress: 0.0 }
+                    });
+                    needs_redraw = true;
+                }
+            }
+
+            if needs_redraw {
+                self.view.redraw(cx);
+            }
+        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if !self.title.is_empty() {
             self.view.label(id!(title_label)).set_text(cx, &self.title);
-        }
-        if !self.subtitle.is_empty() {
-            self.view.label(id!(subtitle_label)).set_text(cx, &self.subtitle);
         }
 
         self.view.draw_walk(cx, scope, walk)
@@ -349,22 +401,12 @@ impl ShellHeaderRef {
         }
     }
 
-    pub fn set_subtitle(&self, cx: &mut Cx, subtitle: &str) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.subtitle = subtitle.to_string();
-            inner.view.label(id!(subtitle_label)).set_text(cx, subtitle);
-        }
-    }
-
     pub fn apply_dark_mode(&self, cx: &mut Cx, dark_mode: f64) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.view.apply_over(cx, live! {
                 draw_bg: { dark_mode: (dark_mode) }
             });
             inner.view.label(id!(title_label)).apply_over(cx, live! {
-                draw_text: { dark_mode: (dark_mode) }
-            });
-            inner.view.label(id!(subtitle_label)).apply_over(cx, live! {
                 draw_text: { dark_mode: (dark_mode) }
             });
             inner.view.button(id!(theme_toggle)).apply_over(cx, live! {

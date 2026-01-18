@@ -13,10 +13,18 @@
 //! - `{0,0}`: Controller sidebar
 //! - `{1,0}` to `{1,6}`: Panel slots (can be single or vertically split)
 
+use std::cell::RefCell;
 use makepad_widgets::*;
 use crate::panel::PanelAction;
 use crate::panel::panel::PanelWidgetRefExt;
 use crate::shell::sidebar::ShellSidebarWidgetExt;
+use crate::grid::{FooterLayoutState, FooterSlotState};
+
+// Thread-local storage for pending footer layout state (used when set_layout_state is called before first draw)
+thread_local! {
+    static PENDING_FOOTER_LAYOUT: RefCell<Option<FooterLayoutState>> = RefCell::new(None);
+    static PENDING_FOOTER_RESET: RefCell<bool> = RefCell::new(false);
+}
 
 live_design! {
     use link::theme::*;
@@ -211,7 +219,28 @@ pub struct SlotState {
     /// Is this slot visible?
     pub visible: bool,
     /// Panel IDs stacked vertically (top to bottom)
-    pub panel_ids: Vec<u64>,
+    pub panel_ids: Vec<String>,
+}
+
+/// Helper to convert string panel ID to LiveId
+fn panel_id_to_live_id(panel_id: &str) -> LiveId {
+    LiveId::from_str_lc(panel_id)
+}
+
+/// Get panel index from panel ID (extracts number from "footer_panel_N" format)
+fn panel_index_from_id(panel_id: &str) -> usize {
+    // Try to extract index from "footer_panel_N" format
+    if let Some(suffix) = panel_id.strip_prefix("footer_panel_") {
+        if let Ok(idx) = suffix.parse::<usize>() {
+            return idx;
+        }
+    }
+    // Fallback: hash the string to get a consistent index
+    let mut hash: usize = 0;
+    for byte in panel_id.bytes() {
+        hash = hash.wrapping_mul(31).wrapping_add(byte as usize);
+    }
+    hash % 7
 }
 
 /// Footer grid widget with resizable controller sidebar and horizontal panel strip.
@@ -233,11 +262,11 @@ pub struct FooterGrid {
 
     /// Currently fullscreen panel ID (None if no fullscreen)
     #[rust]
-    fullscreen_panel: Option<u64>,
+    fullscreen_panel: Option<String>,
 
     /// Currently dragging panel ID
     #[rust]
-    dragging_panel: Option<u64>,
+    dragging_panel: Option<String>,
 
     /// Current drop target (slot index, is_bottom_half)
     #[rust]
@@ -256,19 +285,45 @@ impl Widget for FooterGrid {
             self.view.handle_event(cx, event, scope);
         });
 
+        let mut layout_changed = false;
+
         // Handle Panel actions
         for action in actions.iter() {
             match action.as_widget_action().cast::<PanelAction>() {
                 PanelAction::Close(id) => {
-                    self.close_panel(cx, id.0);
+                    if let Some(panel_id) = self.find_panel_by_live_id(id) {
+                        self.close_panel(cx, &panel_id);
+                        layout_changed = true;
+                    }
                 }
                 PanelAction::Fullscreen(id) => {
-                    self.toggle_fullscreen(cx, id.0);
+                    if let Some(panel_id) = self.find_panel_by_live_id(id) {
+                        self.toggle_fullscreen(cx, &panel_id);
+                        layout_changed = true;
+                    }
                 }
                 PanelAction::StartDrag(id) => {
-                    self.dragging_panel = Some(id.0);
+                    if let Some(panel_id) = self.find_panel_by_live_id(id) {
+                        self.dragging_panel = Some(panel_id);
+                    }
+                }
+                PanelAction::EndDrag(id, abs) => {
+                    // Complete the drop operation
+                    if let Some(panel_id) = self.find_panel_by_live_id(id) {
+                        if self.dragging_panel.as_deref() == Some(&panel_id) {
+                            self.update_drop_target(cx, abs);
+                            self.handle_drop(cx, &panel_id, abs);
+                            layout_changed = true;
+                        }
+                    }
+                    self.dragging_panel = None;
+                    self.drop_target = None;
+                    self.view.redraw(cx);
                 }
                 PanelAction::Maximize(_) => {}
+                PanelAction::LayoutChanged(_) | PanelAction::FooterLayoutChanged(_) | PanelAction::ResetLayout => {
+                    // Ignore - we emit these or handle via thread-local
+                }
                 PanelAction::None => {}
             }
         }
@@ -280,22 +335,54 @@ impl Widget for FooterGrid {
                     self.update_drop_target(cx, fe.abs);
                     self.view.redraw(cx);
                 }
-                Hit::FingerUp(fe) => {
-                    if let Some(dragged_id) = self.dragging_panel.take() {
-                        self.handle_drop(cx, dragged_id, fe.abs);
-                    }
+                Hit::FingerUp(_) => {
+                    // Clear state on any FingerUp as fallback
+                    // (actual drop is handled via EndDrag action from Panel)
+                    self.dragging_panel = None;
                     self.drop_target = None;
                     self.view.redraw(cx);
                 }
                 _ => {}
             }
         }
+
+        // Emit layout changed action if needed
+        if layout_changed {
+            cx.widget_action(
+                self.widget_uid(),
+                &scope.path,
+                PanelAction::FooterLayoutChanged(self.get_layout_state()),
+            );
+        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // Check for pending reset
+        let should_reset = PENDING_FOOTER_RESET.with(|p| {
+            let val = *p.borrow();
+            if val { *p.borrow_mut() = false; }
+            val
+        });
+        if should_reset {
+            self.initialize_slots();
+            self.fullscreen_panel = None;
+            self.needs_layout_update = true;
+        }
+
         if !self.initialized {
             self.initialized = true;
-            self.initialize_slots();
+
+            // Check for pending layout from set_layout_state called before first draw
+            let pending = PENDING_FOOTER_LAYOUT.with(|p| p.borrow_mut().take());
+            if let Some(state) = pending {
+                self.slots = state.slots.into_iter().map(|s| SlotState {
+                    visible: s.visible,
+                    panel_ids: s.panel_ids,
+                }).collect();
+                self.fullscreen_panel = state.fullscreen_panel;
+            } else {
+                self.initialize_slots();
+            }
             self.needs_layout_update = true;
         }
 
@@ -329,7 +416,7 @@ impl FooterGrid {
         self.slots = (0..Self::SLOT_COUNT)
             .map(|i| SlotState {
                 visible: i < count,
-                panel_ids: vec![100 + i as u64],  // Footer panels start at 100
+                panel_ids: vec![format!("footer_panel_{}", i)],
             })
             .collect();
     }
@@ -338,11 +425,23 @@ impl FooterGrid {
         [id!(p0), id!(p1), id!(p2), id!(p3), id!(p4)]
     }
 
+    /// Find panel string ID by LiveId (reverse lookup through all slot panels)
+    fn find_panel_by_live_id(&self, id: LiveId) -> Option<String> {
+        for slot in &self.slots {
+            for panel_id in &slot.panel_ids {
+                if panel_id_to_live_id(panel_id) == id {
+                    return Some(panel_id.clone());
+                }
+            }
+        }
+        None
+    }
+
     fn apply_layout(&mut self, cx: &mut Cx) {
         let slot_ids = Self::slot_ids();
 
         // Handle fullscreen mode
-        if let Some(fs_id) = self.fullscreen_panel {
+        if let Some(ref fs_id) = self.fullscreen_panel.clone() {
             // Hide all slots
             for (i, slot_id) in slot_ids.iter().enumerate() {
                 self.view.view(*slot_id).apply_over(cx, live! {
@@ -356,7 +455,7 @@ impl FooterGrid {
                             visible: true, width: Fill, height: Fill
                         });
                         // Configure as single panel in fullscreen
-                        self.configure_slot(cx, *slot_id, &[fs_id], true);
+                        self.configure_slot(cx, *slot_id, &[fs_id.clone()], true);
                     }
                 }
             }
@@ -384,7 +483,7 @@ impl FooterGrid {
         }
     }
 
-    fn configure_slot(&mut self, cx: &mut Cx, slot_id: &[LiveId], panel_ids: &[u64], is_fullscreen: bool) {
+    fn configure_slot(&mut self, cx: &mut Cx, slot_id: &[LiveId], panel_ids: &[String], is_fullscreen: bool) {
         let panel_slot_ids = Self::panel_slot_ids();
         let count = panel_ids.len().min(5);
 
@@ -395,8 +494,8 @@ impl FooterGrid {
                     visible: true, width: Fill, height: Fill
                 });
                 let panel_ref = self.view.view(slot_id).panel(*p_slot_id);
-                panel_ref.set_panel_id(LiveId(panel_ids[i]));
-                panel_ref.set_panel_index(cx, panel_ids[i] as usize);
+                panel_ref.set_panel_id_str(&panel_ids[i]);
+                panel_ref.set_panel_index(cx, panel_index_from_id(&panel_ids[i]));
                 panel_ref.set_fullscreen(is_fullscreen && count == 1);
             } else {
                 // Hide unused panel slots
@@ -407,14 +506,14 @@ impl FooterGrid {
         }
     }
 
-    fn close_panel(&mut self, cx: &mut Cx, panel_id: u64) {
+    fn close_panel(&mut self, cx: &mut Cx, panel_id: &str) {
         // Exit fullscreen if closing fullscreen panel
-        if self.fullscreen_panel == Some(panel_id) {
+        if self.fullscreen_panel.as_deref() == Some(panel_id) {
             self.fullscreen_panel = None;
         }
 
         for slot in &mut self.slots {
-            if let Some(pos) = slot.panel_ids.iter().position(|&id| id == panel_id) {
+            if let Some(pos) = slot.panel_ids.iter().position(|id| id == panel_id) {
                 slot.panel_ids.remove(pos);
                 if slot.panel_ids.is_empty() {
                     slot.visible = false;
@@ -430,11 +529,11 @@ impl FooterGrid {
         self.view.redraw(cx);
     }
 
-    fn toggle_fullscreen(&mut self, cx: &mut Cx, panel_id: u64) {
-        if self.fullscreen_panel == Some(panel_id) {
+    fn toggle_fullscreen(&mut self, cx: &mut Cx, panel_id: &str) {
+        if self.fullscreen_panel.as_deref() == Some(panel_id) {
             self.fullscreen_panel = None;
         } else {
-            self.fullscreen_panel = Some(panel_id);
+            self.fullscreen_panel = Some(panel_id.to_string());
         }
         self.needs_layout_update = true;
         self.view.redraw(cx);
@@ -451,8 +550,8 @@ impl FooterGrid {
                 }
 
                 // Skip if dragging a panel that's already in this slot
-                if let Some(dragging) = self.dragging_panel {
-                    if slot.panel_ids.contains(&dragging) {
+                if let Some(ref dragging) = self.dragging_panel {
+                    if slot.panel_ids.contains(dragging) {
                         continue;
                     }
                 }
@@ -498,7 +597,7 @@ impl FooterGrid {
         })
     }
 
-    fn handle_drop(&mut self, cx: &mut Cx, dragged_id: u64, _abs: DVec2) {
+    fn handle_drop(&mut self, cx: &mut Cx, dragged_id: &str, _abs: DVec2) {
         let Some((target_idx, is_bottom)) = self.drop_target else {
             return;
         };
@@ -507,7 +606,7 @@ impl FooterGrid {
         let mut source_slot_idx: Option<usize> = None;
 
         for (i, slot) in self.slots.iter().enumerate() {
-            if slot.panel_ids.contains(&dragged_id) {
+            if slot.panel_ids.iter().any(|id| id == dragged_id) {
                 source_slot_idx = Some(i);
                 break;
             }
@@ -522,7 +621,7 @@ impl FooterGrid {
 
             // Remove from source slot
             let src_slot = &mut self.slots[src_idx];
-            if let Some(pos) = src_slot.panel_ids.iter().position(|&id| id == dragged_id) {
+            if let Some(pos) = src_slot.panel_ids.iter().position(|id| id == dragged_id) {
                 src_slot.panel_ids.remove(pos);
             }
             if src_slot.panel_ids.is_empty() {
@@ -534,9 +633,9 @@ impl FooterGrid {
         let target_slot = &mut self.slots[target_idx];
         if target_slot.panel_ids.len() < 5 {
             if is_bottom {
-                target_slot.panel_ids.push(dragged_id);
+                target_slot.panel_ids.push(dragged_id.to_string());
             } else {
-                target_slot.panel_ids.insert(0, dragged_id);
+                target_slot.panel_ids.insert(0, dragged_id.to_string());
             }
         }
 
@@ -574,12 +673,47 @@ impl FooterGrid {
         self.needs_layout_update = true;
         self.view.redraw(cx);
     }
+
+    /// Get current layout state for persistence
+    pub fn get_layout_state(&self) -> FooterLayoutState {
+        FooterLayoutState {
+            slots: self.slots.iter().map(|s| FooterSlotState {
+                visible: s.visible,
+                panel_ids: s.panel_ids.clone(),
+            }).collect(),
+            fullscreen_panel: self.fullscreen_panel.clone(),
+        }
+    }
+
+    /// Set layout state from persistence
+    pub fn set_layout_state(&mut self, cx: &mut Cx, state: FooterLayoutState) {
+        self.slots = state.slots.into_iter().map(|s| SlotState {
+            visible: s.visible,
+            panel_ids: s.panel_ids,
+        }).collect();
+        self.fullscreen_panel = state.fullscreen_panel;
+        self.initialized = true;
+        self.needs_layout_update = true;
+        self.view.redraw(cx);
+    }
 }
 
 impl FooterGridRef {
     pub fn set_visible_panels(&self, cx: &mut Cx, count: usize) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_visible_panels(cx, count);
+        }
+    }
+
+    /// Set layout state from persistence
+    ///
+    /// Note: If called before first draw, stores the state to be applied during initialization.
+    pub fn set_layout_state(&self, cx: &mut Cx, state: FooterLayoutState) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_layout_state(cx, state);
+        } else {
+            // Store in thread-local for retrieval during first draw
+            PENDING_FOOTER_LAYOUT.with(|p| *p.borrow_mut() = Some(state));
         }
     }
 
@@ -592,6 +726,10 @@ impl FooterGridRef {
             inner.drop_target = None;
             inner.needs_layout_update = true;
             inner.view.redraw(cx);
+        } else {
+            // Store reset flag for retrieval during next draw
+            PENDING_FOOTER_RESET.with(|p| *p.borrow_mut() = true);
+            cx.redraw_all();
         }
     }
 

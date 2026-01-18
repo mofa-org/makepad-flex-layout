@@ -35,6 +35,7 @@ pub mod panel;
 pub mod grid;
 pub mod callbacks;
 pub mod persistence;
+pub mod registry;
 
 mod live_design;
 
@@ -48,6 +49,7 @@ pub mod prelude {
     pub use crate::grid::{PanelGrid, FooterGrid, LayoutState};
     pub use crate::callbacks::ShellCallbacks;
     pub use crate::persistence::ShellPreferences;
+    pub use crate::registry::{PanelDefinition, PanelRegistry};
 }
 
 /// Widget exports for use in live_design!

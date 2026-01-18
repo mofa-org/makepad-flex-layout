@@ -7,6 +7,9 @@ use crate::shell::header::ShellHeaderAction;
 use crate::shell::sidebar::ShellSidebarWidgetExt;
 use crate::grid::panel_grid::PanelGridWidgetExt;
 use crate::grid::footer_grid::FooterGridWidgetExt;
+use crate::grid::{LayoutState, FooterLayoutState};
+use crate::panel::PanelAction;
+use crate::persistence::ShellPreferences;
 
 live_design! {
     use link::theme::*;
@@ -165,6 +168,9 @@ live_design! {
 ///
 /// Provides the complete app shell with header, footer, sidebars, and panel grid.
 /// Supports dark/light theme switching with smooth animations.
+/// App ID for persistence
+const APP_ID: &str = "makepad-flex-layout";
+
 #[derive(Live, LiveHook, Widget)]
 pub struct ShellLayout {
     #[deref]
@@ -184,6 +190,17 @@ pub struct ShellLayout {
 
     #[rust]
     initialized: bool,
+
+    #[rust]
+    preferences: ShellPreferences,
+
+    /// Current layout state (updated via LayoutChanged actions from PanelGrid)
+    #[rust]
+    current_layout: Option<LayoutState>,
+
+    /// Current footer layout state (updated via FooterLayoutChanged actions)
+    #[rust]
+    current_footer_layout: Option<FooterLayoutState>,
 }
 
 impl Widget for ShellLayout {
@@ -206,6 +223,17 @@ impl Widget for ShellLayout {
                 }
                 ShellHeaderAction::None => {}
             }
+
+            // Capture layout changes from PanelGrid and FooterGrid
+            match action.as_widget_action().cast::<PanelAction>() {
+                PanelAction::LayoutChanged(state) => {
+                    self.current_layout = Some(state);
+                }
+                PanelAction::FooterLayoutChanged(state) => {
+                    self.current_footer_layout = Some(state);
+                }
+                _ => {}
+            }
         }
 
         // Handle animation updates
@@ -220,6 +248,7 @@ impl Widget for ShellLayout {
         // Initialize on first draw
         if !self.initialized {
             self.initialized = true;
+            self.load_preferences(cx);
             self.apply_theme(cx);
         }
 
@@ -281,9 +310,6 @@ impl ShellLayout {
         self.view.label(id!(header.title_label)).apply_over(cx, live! {
             draw_text: { dark_mode: (dm) }
         });
-        self.view.label(id!(header.subtitle_label)).apply_over(cx, live! {
-            draw_text: { dark_mode: (dm) }
-        });
         self.view.button(id!(header.theme_toggle)).apply_over(cx, live! {
             draw_bg: { dark_mode: (dm) }
         });
@@ -306,18 +332,63 @@ impl ShellLayout {
 
     /// Reset layout to default state
     pub fn reset_layout(&mut self, cx: &mut Cx) {
-        // Reset PanelGrid
+        // Reset our tracked layouts
+        self.current_layout = Some(LayoutState::default());
+        self.current_footer_layout = Some(FooterLayoutState::default());
+        // Reset PanelGrid and FooterGrid (uses thread-local pending reset if borrow fails)
         self.view.panel_grid(id!(center_content)).reset_layout(cx);
-        // Reset FooterGrid
         self.view.footer_grid(id!(footer_content)).reset_layout(cx);
         self.view.redraw(cx);
     }
 
-    /// Save current layout (placeholder for persistence)
-    pub fn save_layout(&mut self, _cx: &mut Cx) {
-        // TODO: Implement layout persistence
-        // For now, just log that save was requested
-        log!("Save layout requested");
+    /// Load preferences from disk and apply
+    fn load_preferences(&mut self, cx: &mut Cx) {
+        self.preferences = ShellPreferences::load(APP_ID);
+
+        // Apply dark mode preference
+        if self.preferences.dark_mode {
+            self.theme.set_dark_mode(true);
+        }
+
+        // Apply saved layout to PanelGrid and track it
+        if let Some(ref layout) = self.preferences.layout {
+            self.current_layout = Some(layout.clone());
+            self.view.panel_grid(id!(center_content)).set_layout_state(cx, layout.clone());
+        }
+
+        // Apply saved footer layout and track it
+        if let Some(ref footer_layout) = self.preferences.footer_layout {
+            self.current_footer_layout = Some(footer_layout.clone());
+            self.view.footer_grid(id!(footer_content)).set_layout_state(cx, footer_layout.clone());
+        }
+    }
+
+    /// Save current layout to disk
+    pub fn save_layout(&mut self, cx: &mut Cx) {
+        // Use the layout state captured from LayoutChanged actions
+        if let Some(layout) = &self.current_layout {
+            self.preferences.layout = Some(layout.clone());
+        } else if self.preferences.layout.is_none() {
+            // No layout changes made yet, save default
+            self.preferences.layout = Some(LayoutState::default());
+        }
+
+        // Save footer layout state
+        if let Some(footer_layout) = &self.current_footer_layout {
+            self.preferences.footer_layout = Some(footer_layout.clone());
+        } else if self.preferences.footer_layout.is_none() {
+            self.preferences.footer_layout = Some(FooterLayoutState::default());
+        }
+
+        // Save dark mode preference
+        self.preferences.dark_mode = self.theme.dark_mode;
+
+        // Persist to disk
+        if let Err(e) = self.preferences.save(APP_ID) {
+            log!("Failed to save layout: {}", e);
+        }
+
+        self.view.redraw(cx);
     }
 
     /// Get the shell configuration

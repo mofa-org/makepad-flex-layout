@@ -9,6 +9,6 @@ pub mod panel_grid;
 pub mod footer_grid;
 
 pub use drop_handler::DropPosition;
-pub use layout_state::{LayoutMode, LayoutState, SplitterPositions};
+pub use layout_state::{LayoutMode, LayoutState, SplitterPositions, FooterLayoutState, FooterSlotState};
 pub use panel_grid::{PanelGrid, PanelGridRef};
 pub use footer_grid::{FooterGrid, FooterGridRef};
