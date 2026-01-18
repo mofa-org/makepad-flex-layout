@@ -7,6 +7,7 @@
 //! - Dark mode support
 
 use makepad_widgets::*;
+use crate::theme::get_global_dark_mode;
 
 live_design! {
     use link::theme::*;
@@ -116,14 +117,20 @@ live_design! {
                 padding: {top: 8, bottom: 8, left: 12, right: 12}
                 align: {x: 0.0, y: 0.5}
                 draw_bg: {
+                    instance dark_mode: 0.0
                     fn pixel(self) -> vec4 {
-                        return vec4(0.973, 0.980, 0.988, 1.0); // slate-50
+                        let light = vec4(0.973, 0.980, 0.988, 1.0); // slate-50
+                        let dark = vec4(0.059, 0.090, 0.165, 1.0);  // slate-900
+                        return mix(light, dark, self.dark_mode);
                     }
                 }
                 draw_text: {
+                    instance dark_mode: 0.0
                     text_style: <FONT_REGULAR> { font_size: 10.0 }
                     fn get_color(self) -> vec4 {
-                        return vec4(0.392, 0.455, 0.545, 1.0); // slate-500
+                        let light = vec4(0.392, 0.455, 0.545, 1.0); // slate-500
+                        let dark = vec4(0.580, 0.639, 0.722, 1.0);  // slate-400
+                        return mix(light, dark, self.dark_mode);
                     }
                 }
                 text: "Show More >"
@@ -245,6 +252,10 @@ impl Widget for ShellSidebar {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // Apply global theme on every draw
+        let dm = get_global_dark_mode();
+        self.apply_dark_mode_internal(cx, dm);
+
         if !self.title.is_empty() {
             self.view.label(id!(header.header_label)).set_text(cx, &self.title);
         }
@@ -354,6 +365,47 @@ impl ShellSidebar {
         // Separator
         self.view.view(id!(separator)).apply_over(cx, live! {
             draw_bg: { dark_mode: (dark_mode) }
+        });
+
+        // Menu buttons in menu_section
+        let menu_button_ids = [
+            id!(menu_section.app_btn_0), id!(menu_section.app_btn_1),
+            id!(menu_section.app_btn_2), id!(menu_section.app_btn_3),
+        ];
+        for btn_id in &menu_button_ids {
+            self.view.button(*btn_id).apply_over(cx, live! {
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+                draw_icon: { dark_mode: (dark_mode) }
+            });
+        }
+
+        // Show More button
+        self.view.button(id!(menu_section.show_more_btn)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+            draw_text: { dark_mode: (dark_mode) }
+        });
+
+        // More apps section buttons
+        let more_button_ids = [
+            id!(menu_section.more_apps_section.app_btn_4),
+            id!(menu_section.more_apps_section.app_btn_5),
+            id!(menu_section.more_apps_section.app_btn_6),
+            id!(menu_section.more_apps_section.app_btn_7),
+        ];
+        for btn_id in &more_button_ids {
+            self.view.button(*btn_id).apply_over(cx, live! {
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+                draw_icon: { dark_mode: (dark_mode) }
+            });
+        }
+
+        // Settings button
+        self.view.button(id!(bottom_section.settings_btn)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+            draw_text: { dark_mode: (dark_mode) }
+            draw_icon: { dark_mode: (dark_mode) }
         });
     }
 }

@@ -5,6 +5,7 @@
 use makepad_widgets::*;
 use crate::panel::PanelAction;
 use crate::theme::colors::panel_colors;
+use crate::theme::get_global_dark_mode;
 
 live_design! {
     use link::theme::*;
@@ -24,16 +25,20 @@ live_design! {
         show_bg: true
         draw_bg: {
             instance dark_mode: 0.0
-            instance panel_color: vec4(1.0, 1.0, 1.0, 1.0)
             uniform border_width: 1.0
 
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 // Square corners - no border radius
                 sdf.rect(0.0, 0.0, self.rect_size.x, self.rect_size.y);
-                sdf.fill(self.panel_color);
 
-                // Light border
+                // Panel background - responds to dark_mode
+                let light_bg = vec4(1.0, 1.0, 1.0, 1.0);           // white
+                let dark_bg = vec4(0.122, 0.161, 0.231, 1.0);      // slate-800
+                let bg_color = mix(light_bg, dark_bg, self.dark_mode);
+                sdf.fill(bg_color);
+
+                // Border
                 let border_color = mix(
                     vec4(0.886, 0.910, 0.941, 1.0),  // slate-200
                     vec4(0.200, 0.255, 0.333, 1.0),  // slate-700
@@ -483,6 +488,10 @@ impl Widget for Panel {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // Apply global theme on every draw
+        let dm = get_global_dark_mode();
+        self.apply_dark_mode_internal(cx, dm);
+
         self.apply_visual_update(cx);
 
         // Maximize buttons (for main grid)
@@ -547,6 +556,46 @@ impl Panel {
         self.view.view(id!(content))
     }
 
+    /// Apply dark mode to this panel (internal, called during draw)
+    fn apply_dark_mode_internal(&mut self, cx: &mut Cx, dark_mode: f64) {
+        // Apply to main panel background
+        self.view.apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+        });
+
+        // Apply to title bar
+        self.view.view(id!(title_bar)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+        });
+
+        // Apply to drag handle
+        self.view.view(id!(title_bar.drag_handle)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+        });
+
+        // Apply to title label
+        self.view.label(id!(title_bar.title)).apply_over(cx, live! {
+            draw_text: { dark_mode: (dark_mode) }
+        });
+
+        // Apply to all title bar buttons
+        self.view.button(id!(title_bar.close_btn)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+        });
+        self.view.button(id!(title_bar.max_btn)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+        });
+        self.view.button(id!(title_bar.restore_btn)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+        });
+        self.view.button(id!(title_bar.fullscreen_btn)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+        });
+        self.view.button(id!(title_bar.restore_fullscreen_btn)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+        });
+    }
+
     fn apply_visual_update(&mut self, cx: &mut Cx2d) {
         if !self.needs_visual_update {
             return;
@@ -609,7 +658,40 @@ impl PanelRef {
 
     pub fn apply_dark_mode(&self, cx: &mut Cx, dark_mode: f64) {
         if let Some(mut inner) = self.borrow_mut() {
+            // Apply to main panel background
             inner.view.apply_over(cx, live! {
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+
+            // Apply to title bar
+            inner.view.view(id!(title_bar)).apply_over(cx, live! {
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+
+            // Apply to drag handle
+            inner.view.view(id!(title_bar.drag_handle)).apply_over(cx, live! {
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+
+            // Apply to title label
+            inner.view.label(id!(title_bar.title)).apply_over(cx, live! {
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // Apply to all title bar buttons
+            inner.view.button(id!(title_bar.close_btn)).apply_over(cx, live! {
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(id!(title_bar.max_btn)).apply_over(cx, live! {
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(id!(title_bar.restore_btn)).apply_over(cx, live! {
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(id!(title_bar.fullscreen_btn)).apply_over(cx, live! {
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(id!(title_bar.restore_fullscreen_btn)).apply_over(cx, live! {
                 draw_bg: { dark_mode: (dark_mode) }
             });
         }

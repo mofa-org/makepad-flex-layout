@@ -1,7 +1,7 @@
 //! Shell layout widget - main container for the app shell
 
 use makepad_widgets::*;
-use crate::theme::{ShellTheme, THEME_TRANSITION_DURATION};
+use crate::theme::{ShellTheme, THEME_TRANSITION_DURATION, set_global_dark_mode};
 use crate::shell::config::ShellConfig;
 use crate::shell::header::ShellHeaderAction;
 use crate::shell::sidebar::ShellSidebarWidgetExt;
@@ -24,7 +24,7 @@ live_design! {
     use crate::grid::panel_grid::PanelGrid;
     use crate::grid::footer_grid::FooterGrid;
 
-    // Thin splitter template with light colors
+    // Thin splitter template with hover highlight
     ThinSplitter = <Splitter> {
         size: 1.0
         draw_bg: {
@@ -34,25 +34,28 @@ live_design! {
 
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                // Background changes on hover
-                let bg_normal = vec4(0.945, 0.961, 0.976, 1.0);  // slate-100
-                let bg_hover = vec4(0.925, 0.937, 0.976, 1.0);   // slight blue tint
+                // Background: transparent normally, blue tint on hover
+                let bg_normal = vec4(0.945, 0.961, 0.976, 0.0);  // transparent
+                let bg_hover = vec4(0.859, 0.898, 0.996, 1.0);   // blue-100 highlight
                 sdf.clear(mix(bg_normal, bg_hover, self.hover));
+
+                // Line thickness increases on hover for better visibility
+                let line_size = mix(self.size, 3.0, self.hover);
 
                 if self.is_vertical > 0.5 {
                     sdf.box(
                         self.splitter_pad,
-                        self.rect_size.y * 0.5 - self.size * 0.5,
+                        self.rect_size.y * 0.5 - line_size * 0.5,
                         self.rect_size.x - 2.0 * self.splitter_pad,
-                        self.size,
+                        line_size,
                         self.border_radius
                     );
                 }
                 else {
                     sdf.box(
-                        self.rect_size.x * 0.5 - self.size * 0.5,
+                        self.rect_size.x * 0.5 - line_size * 0.5,
                         self.splitter_pad,
-                        self.size,
+                        line_size,
                         self.rect_size.y - 2.0 * self.splitter_pad,
                         self.border_radius
                     );
@@ -152,7 +155,7 @@ live_design! {
         }
 
         // Header
-        <View> {
+        overlay_header = <View> {
             width: Fill
             height: 48
             padding: { left: 16 }
@@ -169,7 +172,7 @@ live_design! {
                 }
             }
 
-            <Label> {
+            overlay_title = <Label> {
                 draw_text: {
                     instance dark_mode: 0.0
                     text_style: <FONT_SEMIBOLD> { font_size: 13.0 }
@@ -184,31 +187,31 @@ live_design! {
         }
 
         // Menu items
-        <View> {
+        menu_items = <View> {
             width: Fill
             height: Fit
             flow: Down
             padding: { top: 8, bottom: 8 }
 
-            <OverlayMenuButton> {
+            btn_new_project = <OverlayMenuButton> {
                 text: "New Project"
                 draw_icon: { svg_file: dep("crate://makepad-widgets/resources/icons/icon_layout.svg") }
             }
-            <OverlayMenuButton> {
+            btn_open_recent = <OverlayMenuButton> {
                 text: "Open Recent"
                 draw_icon: { svg_file: dep("crate://makepad-widgets/resources/icons/icon_folder.svg") }
             }
-            <OverlayMenuButton> {
+            btn_import_file = <OverlayMenuButton> {
                 text: "Import File"
                 draw_icon: { svg_file: dep("crate://makepad-widgets/resources/icons/icon_file.svg") }
             }
-            <OverlayMenuButton> {
+            btn_export_data = <OverlayMenuButton> {
                 text: "Export Data"
                 draw_icon: { svg_file: dep("crate://makepad-widgets/resources/icons/icon_vector.svg") }
             }
 
             // Separator
-            <View> {
+            overlay_separator = <View> {
                 width: Fill
                 height: 1
                 margin: { top: 8, bottom: 8, left: 16, right: 16 }
@@ -223,11 +226,11 @@ live_design! {
                 }
             }
 
-            <OverlayMenuButton> {
+            btn_preferences = <OverlayMenuButton> {
                 text: "Preferences"
                 draw_icon: { svg_file: dep("crate://makepad-widgets/resources/icons/icon_select.svg") }
             }
-            <OverlayMenuButton> {
+            btn_help = <OverlayMenuButton> {
                 text: "Help & Support"
                 draw_icon: { svg_file: dep("crate://makepad-widgets/resources/icons/icon_text.svg") }
             }
@@ -706,6 +709,9 @@ impl ShellLayout {
     fn apply_theme(&mut self, cx: &mut Cx) {
         let dm = self.theme.dark_mode_anim;
 
+        // Update global theme state for widgets that read it during draw
+        set_global_dark_mode(dm);
+
         // Apply to shell background
         self.view.apply_over(cx, live! {
             draw_bg: { dark_mode: (dm) }
@@ -731,23 +737,57 @@ impl ShellLayout {
             draw_bg: { dark_mode: (dm) }
         });
 
-        // Access Dock content using widget refs with recursive search
-        self.view.shell_sidebar(id!(left_sidebar_content)).apply_dark_mode(cx, dm);
-        self.view.shell_sidebar(id!(right_sidebar_content)).apply_dark_mode(cx, dm);
-        self.view.panel_grid(id!(center_content)).apply_dark_mode(cx, dm);
-        self.view.footer_grid(id!(footer_content)).apply_dark_mode(cx, dm);
+        // Access Dock content widgets using apply_over_and_redraw for deep propagation
+        // The Dock creates content widgets dynamically with "kind" templates
+
+        // Apply dark_mode to ALL nested widgets via recursive apply
+        self.view.view(id!(main_container.dock_wrapper)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+        });
+
+        // Apply to left sidebar content
+        self.view.widget(id!(left_sidebar_content)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+        });
+        self.view.widget(id!(left_sidebar_content.header)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+        });
+        self.view.widget(id!(left_sidebar_content.header.header_label)).apply_over(cx, live! {
+            draw_text: { dark_mode: (dm) }
+        });
+
+        // Apply to right sidebar content
+        self.view.widget(id!(right_sidebar_content)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+        });
+        self.view.widget(id!(right_sidebar_content.header)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+        });
+        self.view.widget(id!(right_sidebar_content.header.header_label)).apply_over(cx, live! {
+            draw_text: { dark_mode: (dm) }
+        });
+
+        // Apply to center content (PanelGrid)
+        self.view.widget(id!(center_content)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+        });
+
+        // Apply to footer content
+        self.view.widget(id!(footer_content)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+        });
 
         // Apply to overlay sidebar (purple themed)
         self.view.view(id!(overlay_sidebar)).apply_over(cx, live! {
             draw_bg: { dark_mode: (dm) }
         });
+        self.apply_overlay_content_theme(cx, dm, id!(overlay_sidebar.overlay_sidebar_content));
 
         // Apply to pinned sidebar (purple themed - used for click toggle)
         self.view.view(id!(pinned_sidebar)).apply_over(cx, live! {
             draw_bg: { dark_mode: (dm) }
         });
-        // Note: overlay_sidebar_content and pinned_sidebar_content are Views, not ShellSidebar
-        // The dark_mode instances in the overlay menu buttons handle theming automatically
+        self.apply_overlay_content_theme(cx, dm, id!(pinned_sidebar.pinned_sidebar_content));
 
         // Note: Dock splitters use a neutral semi-transparent color
         // that works in both light and dark modes (can't dynamically theme them)
@@ -756,8 +796,117 @@ impl ShellLayout {
     /// Apply theme to overlay sidebar only (called when showing overlay)
     fn apply_overlay_theme(&mut self, cx: &mut Cx) {
         let dm = self.theme.dark_mode_anim;
+
+        // Apply to overlay container
         self.view.view(id!(overlay_sidebar)).apply_over(cx, live! {
             draw_bg: { dark_mode: (dm) }
+        });
+
+        // Apply to overlay content
+        self.apply_overlay_content_theme(cx, dm, id!(overlay_sidebar.overlay_sidebar_content));
+
+        // Apply to pinned sidebar too
+        self.view.view(id!(pinned_sidebar)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+        });
+        self.apply_overlay_content_theme(cx, dm, id!(pinned_sidebar.pinned_sidebar_content));
+    }
+
+    /// Apply theme to overlay content (overlay_sidebar)
+    fn apply_overlay_content_theme(&mut self, cx: &mut Cx, dm: f64, _content_id: &[LiveId]) {
+        // We apply to both overlay and pinned sidebar contents
+        // The content_id parameter is no longer used - we explicitly access both
+
+        // Apply to overlay_sidebar content
+        self.view.view(id!(overlay_sidebar.overlay_sidebar_content)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+        });
+        self.view.view(id!(overlay_sidebar.overlay_sidebar_content.overlay_header)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+        });
+        self.view.label(id!(overlay_sidebar.overlay_sidebar_content.overlay_header.overlay_title)).apply_over(cx, live! {
+            draw_text: { dark_mode: (dm) }
+        });
+        self.view.view(id!(overlay_sidebar.overlay_sidebar_content.menu_items.overlay_separator)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+        });
+
+        // Menu buttons in overlay_sidebar
+        self.view.button(id!(overlay_sidebar.overlay_sidebar_content.menu_items.btn_new_project)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+            draw_text: { dark_mode: (dm) }
+            draw_icon: { dark_mode: (dm) }
+        });
+        self.view.button(id!(overlay_sidebar.overlay_sidebar_content.menu_items.btn_open_recent)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+            draw_text: { dark_mode: (dm) }
+            draw_icon: { dark_mode: (dm) }
+        });
+        self.view.button(id!(overlay_sidebar.overlay_sidebar_content.menu_items.btn_import_file)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+            draw_text: { dark_mode: (dm) }
+            draw_icon: { dark_mode: (dm) }
+        });
+        self.view.button(id!(overlay_sidebar.overlay_sidebar_content.menu_items.btn_export_data)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+            draw_text: { dark_mode: (dm) }
+            draw_icon: { dark_mode: (dm) }
+        });
+        self.view.button(id!(overlay_sidebar.overlay_sidebar_content.menu_items.btn_preferences)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+            draw_text: { dark_mode: (dm) }
+            draw_icon: { dark_mode: (dm) }
+        });
+        self.view.button(id!(overlay_sidebar.overlay_sidebar_content.menu_items.btn_help)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+            draw_text: { dark_mode: (dm) }
+            draw_icon: { dark_mode: (dm) }
+        });
+
+        // Apply to pinned_sidebar content (same structure)
+        self.view.view(id!(pinned_sidebar.pinned_sidebar_content)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+        });
+        self.view.view(id!(pinned_sidebar.pinned_sidebar_content.overlay_header)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+        });
+        self.view.label(id!(pinned_sidebar.pinned_sidebar_content.overlay_header.overlay_title)).apply_over(cx, live! {
+            draw_text: { dark_mode: (dm) }
+        });
+        self.view.view(id!(pinned_sidebar.pinned_sidebar_content.menu_items.overlay_separator)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+        });
+
+        // Menu buttons in pinned_sidebar
+        self.view.button(id!(pinned_sidebar.pinned_sidebar_content.menu_items.btn_new_project)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+            draw_text: { dark_mode: (dm) }
+            draw_icon: { dark_mode: (dm) }
+        });
+        self.view.button(id!(pinned_sidebar.pinned_sidebar_content.menu_items.btn_open_recent)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+            draw_text: { dark_mode: (dm) }
+            draw_icon: { dark_mode: (dm) }
+        });
+        self.view.button(id!(pinned_sidebar.pinned_sidebar_content.menu_items.btn_import_file)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+            draw_text: { dark_mode: (dm) }
+            draw_icon: { dark_mode: (dm) }
+        });
+        self.view.button(id!(pinned_sidebar.pinned_sidebar_content.menu_items.btn_export_data)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+            draw_text: { dark_mode: (dm) }
+            draw_icon: { dark_mode: (dm) }
+        });
+        self.view.button(id!(pinned_sidebar.pinned_sidebar_content.menu_items.btn_preferences)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+            draw_text: { dark_mode: (dm) }
+            draw_icon: { dark_mode: (dm) }
+        });
+        self.view.button(id!(pinned_sidebar.pinned_sidebar_content.menu_items.btn_help)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+            draw_text: { dark_mode: (dm) }
+            draw_icon: { dark_mode: (dm) }
         });
     }
 

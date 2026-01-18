@@ -29,6 +29,27 @@ pub use colors::*;
 pub use styles::*;
 
 use makepad_widgets::*;
+use std::cell::RefCell;
+
+// ============================================================================
+// GLOBAL THEME STATE (for widgets that can't be accessed via id lookup)
+// ============================================================================
+
+thread_local! {
+    /// Global dark mode animation value (0.0 = light, 1.0 = dark)
+    /// Widgets can read this during draw to get the current theme state
+    static GLOBAL_DARK_MODE: RefCell<f64> = RefCell::new(0.0);
+}
+
+/// Set the global dark mode value (called by ShellLayout during theme changes)
+pub fn set_global_dark_mode(value: f64) {
+    GLOBAL_DARK_MODE.with(|dm| *dm.borrow_mut() = value);
+}
+
+/// Get the current global dark mode value (called by widgets during draw)
+pub fn get_global_dark_mode() -> f64 {
+    GLOBAL_DARK_MODE.with(|dm| *dm.borrow())
+}
 
 // ============================================================================
 // SHELL THEME

@@ -19,6 +19,7 @@ use crate::panel::PanelAction;
 use crate::panel::panel::PanelWidgetRefExt;
 use crate::shell::sidebar::ShellSidebarWidgetExt;
 use crate::grid::{FooterLayoutState, FooterSlotState};
+use crate::theme::get_global_dark_mode;
 
 // Thread-local storage for pending footer layout state (used when set_layout_state is called before first draw)
 thread_local! {
@@ -132,6 +133,7 @@ live_design! {
     pub FooterGrid = {{FooterGrid}} {
         width: Fill
         height: Fill
+        cursor: Default
 
         show_bg: true
         draw_bg: {
@@ -357,6 +359,10 @@ impl Widget for FooterGrid {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // Apply global theme on every draw
+        let dm = get_global_dark_mode();
+        self.apply_dark_mode_internal(cx, dm);
+
         // Check for pending reset
         let should_reset = PENDING_FOOTER_RESET.with(|p| {
             let val = *p.borrow();
@@ -419,6 +425,17 @@ impl FooterGrid {
                 panel_ids: vec![format!("footer_panel_{}", i)],
             })
             .collect();
+    }
+
+    /// Apply dark mode to this grid (internal, called during draw)
+    fn apply_dark_mode_internal(&mut self, cx: &mut Cx, dark_mode: f64) {
+        self.view.apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+        });
+
+        self.view.view(id!(panel_strip_content)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+        });
     }
 
     fn panel_slot_ids() -> [&'static [LiveId]; 5] {

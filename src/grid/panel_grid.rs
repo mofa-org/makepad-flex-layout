@@ -8,6 +8,7 @@ use crate::panel::PanelAction;
 use crate::panel::panel::PanelWidgetExt;
 use crate::grid::drop_handler::{DropPosition, calculate_drop_position};
 use crate::grid::layout_state::LayoutState;
+use crate::theme::get_global_dark_mode;
 
 // Thread-local storage for pending layout state (used when set_layout_state is called before first draw)
 thread_local! {
@@ -31,6 +32,7 @@ live_design! {
         width: Fill
         height: Fill
         padding: 0
+        cursor: Default
 
         show_bg: true
         draw_bg: {
@@ -247,6 +249,12 @@ impl Widget for PanelGrid {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // Apply global theme on every draw
+        let dm = get_global_dark_mode();
+        self.view.apply_over(cx, live! {
+            draw_bg: { dark_mode: (dm) }
+        });
+
         // Check for pending reset
         let should_reset = PENDING_RESET.with(|p| {
             let val = *p.borrow();
@@ -573,12 +581,39 @@ impl PanelGridRef {
         }
     }
 
-    /// Apply dark mode value to this grid
+    /// Apply dark mode value to this grid and all panels
     pub fn apply_dark_mode(&self, cx: &mut Cx, dark_mode: f64) {
         if let Some(mut inner) = self.borrow_mut() {
+            // Apply to grid background
             inner.view.apply_over(cx, live! {
                 draw_bg: { dark_mode: (dark_mode) }
             });
+
+            // Apply to all panels in all slots
+            let slot_ids = [
+                // Row 1
+                id!(window_container.row1.s1_1), id!(window_container.row1.s1_2),
+                id!(window_container.row1.s1_3), id!(window_container.row1.s1_4),
+                id!(window_container.row1.s1_5), id!(window_container.row1.s1_6),
+                id!(window_container.row1.s1_7), id!(window_container.row1.s1_8),
+                id!(window_container.row1.s1_9),
+                // Row 2
+                id!(window_container.row2.s2_1), id!(window_container.row2.s2_2),
+                id!(window_container.row2.s2_3), id!(window_container.row2.s2_4),
+                id!(window_container.row2.s2_5), id!(window_container.row2.s2_6),
+                id!(window_container.row2.s2_7), id!(window_container.row2.s2_8),
+                id!(window_container.row2.s2_9),
+                // Row 3
+                id!(window_container.row3.s3_1), id!(window_container.row3.s3_2),
+                id!(window_container.row3.s3_3), id!(window_container.row3.s3_4),
+                id!(window_container.row3.s3_5), id!(window_container.row3.s3_6),
+                id!(window_container.row3.s3_7), id!(window_container.row3.s3_8),
+                id!(window_container.row3.s3_9),
+            ];
+
+            for slot_id in &slot_ids {
+                inner.view.panel(*slot_id).apply_dark_mode(cx, dark_mode);
+            }
         }
     }
 }
