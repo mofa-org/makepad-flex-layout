@@ -408,8 +408,14 @@ live_design! {
 ///
 /// Provides the complete app shell with header, footer, sidebars, and panel grid.
 /// Supports dark/light theme switching with smooth animations.
-/// App ID for persistence
+/// Also includes overlay sidebar (hover) and pinned sidebar (click) features.
+
+// Layout constants
 const APP_ID: &str = "makepad-flex-layout";
+const SIDEBAR_WIDTH: f64 = 270.0;
+const HEADER_HEIGHT: f64 = 48.0;
+const SIDEBAR_ANIM_DURATION: f64 = 0.25;  // 250ms
+const CLICK_DEBOUNCE_TIME: f64 = 0.3;     // 300ms
 
 #[derive(Live, LiveHook, Widget)]
 pub struct ShellLayout {
@@ -492,14 +498,14 @@ impl Widget for ShellLayout {
                 // Extends from hamburger's left edge to overlay width, from hamburger bottom to overlay top + some buffer
                 let bridge_zone = Rect {
                     pos: dvec2(0.0, hamburger_rect.pos.y),
-                    size: dvec2(270.0, 60.0),  // Cover header area + a bit below
+                    size: dvec2(SIDEBAR_WIDTH, HEADER_HEIGHT + 12.0),  // Cover header area + a bit below
                 };
                 let over_bridge = self.overlay_showing && bridge_zone.contains(e.abs);
 
-                // Overlay zone: the actual sidebar area (y starts at 48, extends down)
+                // Overlay zone: the actual sidebar area (y starts at header height, extends down)
                 let overlay_zone = Rect {
-                    pos: dvec2(0.0, 48.0),
-                    size: dvec2(270.0, 600.0),  // Fixed height for hover detection
+                    pos: dvec2(0.0, HEADER_HEIGHT),
+                    size: dvec2(SIDEBAR_WIDTH, 600.0),  // Fixed height for hover detection
                 };
                 let over_overlay = self.overlay_showing && overlay_zone.contains(e.abs);
 
@@ -535,7 +541,7 @@ impl Widget for ShellLayout {
                     // Debounce click events (prevent double-toggle from rapid clicks)
                     let now = Cx::time_now();
                     let time_since_last = now - self.last_click_time;
-                    if time_since_last > 0.3 {  // 300ms debounce
+                    if time_since_last > CLICK_DEBOUNCE_TIME {
                         self.last_click_time = now;
                         log!("layout.rs - HamburgerClicked received (delta={:.3}s), toggling sidebar", time_since_last);
                         // Toggle sidebar expanded/pinned state (click to expand/collapse)
@@ -656,11 +662,8 @@ impl ShellLayout {
 
     /// Update sidebar pin animation (frame-by-frame like MoFA Studio)
     fn update_sidebar_animation(&mut self, cx: &mut Cx) {
-        const SIDEBAR_WIDTH: f64 = 270.0;
-        const ANIM_DURATION: f64 = 0.25;  // 250ms animation
-
         let elapsed = Cx::time_now() - self.sidebar_pin_anim_start;
-        let progress = (elapsed / ANIM_DURATION).min(1.0);
+        let progress = (elapsed / SIDEBAR_ANIM_DURATION).min(1.0);
 
         // Ease out cubic for smooth deceleration
         let eased = 1.0 - (1.0 - progress).powi(3);
