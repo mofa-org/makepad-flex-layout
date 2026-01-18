@@ -53,6 +53,8 @@ src/
 │   ├── panel.rs           # Panel - draggable window with title bar
 │   └── actions.rs         # PanelAction enum for events
 │
+├── registry.rs            # PanelRegistry for panel definitions
+│
 ├── grid/                  # Layout containers
 │   ├── mod.rs
 │   ├── panel_grid.rs      # PanelGrid - main 3x9 grid with drag-drop
@@ -118,7 +120,27 @@ Panel (draggable window)
 │   └── close_btn
 │
 └── content (Fill)
-    └── content_label (panel number display)
+    └── <empty slot for customer widget injection>
+```
+
+### Scope-Based Content Access
+
+Panels push their semantic ID to the scope path, enabling content widgets to identify their context:
+
+```
+App.handle_event(scope: Scope::with_data(&mut app_data))
+    │
+    ▼
+ShellLayout → PanelGrid → Panel
+    │
+    └── scope.with_id(panel_id, |scope| {
+            content.draw_walk(cx, scope, walk)
+        })
+            │
+            ▼
+        Content Widget:
+            let panel_id = scope.path.from_end(0);  // Get panel ID
+            let data = scope.data.get::<AppData>(); // Get app data
 ```
 
 ---
@@ -140,7 +162,7 @@ Panel (draggable window)
 
 | Type | Location | Purpose |
 |------|----------|---------|
-| `LayoutState` | `grid/layout_state.rs` | Serializable main grid state |
+| `LayoutState` | `grid/layout_state.rs` | Serializable main grid state (String IDs) |
 | `FooterLayoutState` | `grid/layout_state.rs` | Serializable footer grid state |
 | `FooterSlotState` | `grid/layout_state.rs` | Single footer slot with panel IDs |
 | `LayoutMode` | `grid/layout_state.rs` | AutoGrid, HStack, VStack, Tabbed |
@@ -148,6 +170,8 @@ Panel (draggable window)
 | `ShellTheme` | `theme/mod.rs` | Dark mode state and animation progress |
 | `ShellConfig` | `shell/config.rs` | Builder-pattern configuration |
 | `ShellPreferences` | `persistence.rs` | Persisted user preferences |
+| `PanelRegistry` | `registry.rs` | Central registry for panel definitions |
+| `PanelDefinition` | `registry.rs` | Panel metadata (id, title, capabilities) |
 
 ### Action Types
 
@@ -160,6 +184,7 @@ pub enum PanelAction {
     EndDrag(LiveId, DVec2),                 // Finger released with position
     LayoutChanged(LayoutState),             // Main grid layout changed
     FooterLayoutChanged(FooterLayoutState), // Footer layout changed
+    ResetLayout,                            // Reset to default layout
     None,
 }
 
@@ -388,19 +413,27 @@ pub struct ShellPreferences {
 
 #[derive(Serialize, Deserialize)]
 pub struct LayoutState {
-    pub row_assignments: Vec<Vec<u64>>,  // Panel IDs per row
-    pub visible_panels: Vec<u64>,        // Currently visible panels
-    pub maximized_panel: Option<u64>,    // Maximized panel ID
+    pub row_assignments: Vec<Vec<String>>,  // Semantic panel IDs per row
+    pub visible_panels: HashSet<String>,    // Currently visible panels
+    pub maximized_panel: Option<String>,    // Maximized panel ID
     pub layout_mode: LayoutMode,
     pub selected_tab: usize,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct FooterLayoutState {
-    pub slots: Vec<FooterSlotState>,
-    pub fullscreen_panel: Option<u64>,
+    pub slots: Vec<FooterSlotState>,       // Each slot has panel_ids: Vec<String>
+    pub fullscreen_panel: Option<String>,
 }
 ```
+
+### Panel ID Format
+
+Panels use semantic string IDs for persistence and scope routing:
+- Main grid: `"panel_0"`, `"panel_1"`, ... `"panel_8"`
+- Footer grid: `"footer_panel_0"`, `"footer_panel_1"`, ...
+
+IDs are converted to `LiveId` via `LiveId::from_str_lc()` for scope path routing.
 
 ### Load/Save Flow
 
@@ -410,16 +443,69 @@ Startup:
         └── load_preferences(APP_ID)
             └── Read JSON from disk
             └── Apply dark_mode
-            └── Apply layout to PanelGrid
-            └── Apply footer_layout to FooterGrid
+            └── Try to apply layout to PanelGrid
+                └── borrow_mut() fails (widget not yet drawn)
+                └── Store in PENDING_LAYOUT thread-local
+            └── Try to apply footer_layout to FooterGrid
+                └── borrow_mut() fails
+                └── Store in PENDING_FOOTER_LAYOUT thread-local
+        └── self.view.draw_walk() draws children
+            └── PanelGrid.draw_walk() [first call]
+                └── Check PENDING_LAYOUT thread-local
+                └── Apply pending state instead of default
+            └── FooterGrid.draw_walk() [first call]
+                └── Check PENDING_FOOTER_LAYOUT thread-local
+                └── Apply pending state instead of default
 
 Save:
     User clicks "Save Layout"
         └── ShellHeaderAction::SaveLayout
             └── ShellLayout.save_layout()
-                └── Collect current states
+                └── Collect current states (tracked via LayoutChanged actions)
                 └── Serialize to JSON
                 └── Write to disk
+
+Reset:
+    User clicks "Reset"
+        └── ShellHeaderAction::ResetLayout
+            └── ShellLayout.reset_layout()
+                └── Try PanelGridRef.reset_layout()
+                    └── borrow_mut() fails during event handling
+                    └── Store PENDING_RESET = true
+                └── redraw_all() triggers draw
+            └── PanelGrid.draw_walk()
+                └── Check PENDING_RESET flag
+                └── Reset to LayoutState::default()
+```
+
+### Thread-Local Pending State Pattern
+
+Widget refs (`PanelGridRef`, `FooterGridRef`) cannot be borrowed before their first draw or during event handling. The shell uses thread-local storage to defer state changes:
+
+```rust
+thread_local! {
+    static PENDING_LAYOUT: RefCell<Option<LayoutState>> = RefCell::new(None);
+    static PENDING_RESET: RefCell<bool> = RefCell::new(false);
+}
+
+// In Ref method (borrow may fail)
+pub fn set_layout_state(&self, cx: &mut Cx, state: LayoutState) {
+    if let Some(mut inner) = self.borrow_mut() {
+        inner.set_layout_state(cx, state);
+    } else {
+        PENDING_LAYOUT.with(|p| *p.borrow_mut() = Some(state));
+    }
+}
+
+// In draw_walk (widget is accessible)
+fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+    // Check for pending state
+    let pending = PENDING_LAYOUT.with(|p| p.borrow_mut().take());
+    if let Some(state) = pending {
+        self.layout_state = state;
+    }
+    // ... rest of draw
+}
 ```
 
 ---
@@ -541,6 +627,45 @@ let actions = cx.capture_actions(|cx| {
 cx.widget_action(self.widget_uid(), &scope.path, MyAction::Something);
 ```
 
+### 5. Scope-Based Content Injection
+
+Panels push their ID to scope, enabling content widgets to access context:
+
+```rust
+// In Panel::draw_walk
+scope.with_id(self.panel_id, |scope| {
+    self.view.draw_walk(cx, scope, walk)
+})
+
+// In content widget
+fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+    let panel_id = scope.path.from_end(0);  // Get panel ID
+    let data = scope.data.get::<AppData>(); // Get app data
+    // Draw based on panel_id and data
+}
+```
+
+### 6. Thread-Local Deferred State
+
+For operations that may fail due to widget lifecycle timing:
+
+```rust
+thread_local! {
+    static PENDING_STATE: RefCell<Option<State>> = RefCell::new(None);
+}
+
+// Store when borrow fails
+if self.borrow_mut().is_none() {
+    PENDING_STATE.with(|p| *p.borrow_mut() = Some(state));
+}
+
+// Apply during draw_walk
+let pending = PENDING_STATE.with(|p| p.borrow_mut().take());
+if let Some(state) = pending {
+    self.apply_state(state);
+}
+```
+
 ---
 
 ## Integration Guide
@@ -599,16 +724,17 @@ makepad-app-shell = { path = "../makepad-app-shell" }
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `lib.rs` | ~50 | Public exports, live_design registration |
-| `shell/layout.rs` | ~400 | Main container, theme animation, persistence |
-| `shell/header.rs` | ~350 | Header bar with action buttons |
-| `panel/panel.rs` | ~570 | Draggable panel widget |
-| `panel/actions.rs` | ~40 | PanelAction enum |
-| `grid/panel_grid.rs` | ~500 | Main grid with drag-drop |
-| `grid/footer_grid.rs` | ~680 | Footer grid with vertical stacking |
-| `grid/layout_state.rs` | ~210 | Serializable state structures |
+| `lib.rs` | ~85 | Public exports, live_design registration |
+| `shell/layout.rs` | ~430 | Main container, theme animation, persistence |
+| `shell/header.rs` | ~400 | Header bar with Save/Reset/Theme buttons |
+| `panel/panel.rs` | ~620 | Draggable panel with scope-based content |
+| `panel/actions.rs` | ~45 | PanelAction enum (incl. ResetLayout) |
+| `grid/panel_grid.rs` | ~580 | Main grid with drag-drop, pending state |
+| `grid/footer_grid.rs` | ~750 | Footer grid with vertical stacking |
+| `grid/layout_state.rs` | ~250 | Serializable state (String IDs) |
+| `registry.rs` | ~80 | PanelRegistry for definitions |
 | `theme/mod.rs` | ~100 | Theme state and animation |
 | `theme/colors.rs` | ~170 | Color palette |
 | `persistence.rs` | ~110 | JSON save/load |
 
-**Total**: ~4,500 lines of Rust code
+**Total**: ~5,500 lines of Rust code
