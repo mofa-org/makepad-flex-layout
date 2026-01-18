@@ -58,6 +58,12 @@ pub mod widgets {
     pub use crate::shell::header::{ShellHeader, ShellHeaderRef};
     pub use crate::shell::footer::{ShellFooter, ShellFooterRef};
     pub use crate::shell::sidebar::{ShellSidebar, ShellSidebarRef};
+    pub use crate::shell::sidebar_menu::{
+        SidebarMenuItem, SidebarMenuItemRef,
+        ShowMoreButton, ShowMoreButtonRef,
+        ExpandableSection, ExpandableSectionRef,
+        SidebarMenuAction,
+    };
     pub use crate::panel::{Panel, PanelRef};
     pub use crate::grid::{PanelGrid, PanelGridRef, FooterGrid, FooterGridRef};
 }
@@ -81,5 +87,6 @@ pub fn live_design(cx: &mut Cx) {
     crate::shell::header::live_design(cx);
     crate::shell::footer::live_design(cx);
     crate::shell::sidebar::live_design(cx);
+    crate::shell::sidebar_menu::live_design(cx);
     crate::shell::layout::live_design(cx);
 }
