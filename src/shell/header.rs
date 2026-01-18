@@ -29,6 +29,53 @@ live_design! {
         align: { y: 0.5 }
         spacing: 16
 
+        // Hamburger menu button for overlay sidebar
+        hamburger_btn = <Button> {
+            width: 28
+            height: 28
+            margin: { right: 8 }
+            text: ""
+
+            draw_bg: {
+                instance dark_mode: 0.0
+
+                fn pixel(self) -> vec4 {
+                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                    let cx = self.rect_size.x * 0.5;
+                    let cy = self.rect_size.y * 0.5;
+
+                    // Stroke color: dark in light mode, light in dark mode
+                    let light_stroke = vec4(0.122, 0.161, 0.216, 1.0);
+                    let dark_stroke = vec4(0.945, 0.961, 0.976, 1.0);
+                    let hover_stroke = vec4(0.231, 0.510, 0.965, 1.0);
+                    let base = mix(light_stroke, dark_stroke, self.dark_mode);
+                    let stroke = mix(base, hover_stroke, self.hover);
+                    let line_width = 1.8;
+
+                    // Draw three horizontal lines (hamburger icon)
+                    let line_len = 14.0;
+                    let gap = 5.0;
+
+                    // Top line
+                    sdf.move_to(cx - line_len * 0.5, cy - gap);
+                    sdf.line_to(cx + line_len * 0.5, cy - gap);
+                    sdf.stroke(stroke, line_width);
+
+                    // Middle line
+                    sdf.move_to(cx - line_len * 0.5, cy);
+                    sdf.line_to(cx + line_len * 0.5, cy);
+                    sdf.stroke(stroke, line_width);
+
+                    // Bottom line
+                    sdf.move_to(cx - line_len * 0.5, cy + gap);
+                    sdf.line_to(cx + line_len * 0.5, cy + gap);
+                    sdf.stroke(stroke, line_width);
+
+                    return sdf.result;
+                }
+            }
+        }
+
         title_label = <Label> {
             draw_text: {
                 instance dark_mode: 0.0
@@ -260,6 +307,9 @@ live_design! {
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ShellHeaderAction {
     ToggleDarkMode,
+    HamburgerHoverIn,
+    HamburgerHoverOut,
+    HamburgerClicked,
     ResetLayout,
     SaveLayout,
     None,
@@ -287,6 +337,9 @@ pub struct ShellHeader {
 
     #[rust]
     reset_anim: ButtonAnimState,
+
+    #[rust]
+    hamburger_hovering: bool,
 }
 
 impl Widget for ShellHeader {
@@ -294,6 +347,40 @@ impl Widget for ShellHeader {
         let actions = cx.capture_actions(|cx| {
             self.view.handle_event(cx, event, scope);
         });
+
+        // Handle hamburger button hover and click
+        let hamburger = self.view.button(id!(hamburger_btn));
+
+        if hamburger.clicked(&actions) {
+            cx.widget_action(
+                self.widget_uid(),
+                &scope.path,
+                ShellHeaderAction::HamburgerClicked,
+            );
+        }
+
+        // Check for hover using Hit events
+        let hamburger_area = hamburger.area();
+        let hamburger_rect = hamburger_area.rect(cx);
+        match event.hits(cx, hamburger_area) {
+            Hit::FingerHoverIn(_) => {
+                log!("header.rs - FingerHoverIn triggered, rect={:?}, was_hovering={}", hamburger_rect, self.hamburger_hovering);
+                if !self.hamburger_hovering {
+                    self.hamburger_hovering = true;
+                    log!("header.rs - Emitting HamburgerHoverIn action");
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        ShellHeaderAction::HamburgerHoverIn,
+                    );
+                }
+            }
+            Hit::FingerHoverOut(_) => {
+                log!("header.rs - FingerHoverOut triggered, rect={:?}, was_hovering={}", hamburger_rect, self.hamburger_hovering);
+                self.hamburger_hovering = false;
+            }
+            _ => {}
+        }
 
         if self.view.button(id!(theme_toggle)).clicked(&actions) {
             cx.widget_action(
@@ -408,6 +495,9 @@ impl ShellHeaderRef {
             });
             inner.view.label(id!(title_label)).apply_over(cx, live! {
                 draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(id!(hamburger_btn)).apply_over(cx, live! {
+                draw_bg: { dark_mode: (dark_mode) }
             });
             inner.view.button(id!(theme_toggle)).apply_over(cx, live! {
                 draw_bg: { dark_mode: (dark_mode) }
