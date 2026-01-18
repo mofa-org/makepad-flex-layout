@@ -384,12 +384,14 @@ pub struct Panel {
 impl Widget for Panel {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // Push panel ID to scope path so content can identify which panel it's in
+        // Capture actions to check for button clicks, then forward non-Panel actions
         let actions = scope.with_id(self.panel_id, |scope| {
             cx.capture_actions(|cx| {
                 self.view.handle_event(cx, event, scope);
             })
         });
 
+        // Check for Panel-specific button clicks
         if self.view.button(id!(title_bar.close_btn)).clicked(&actions) {
             cx.widget_action(
                 self.widget_uid(),
@@ -417,6 +419,10 @@ impl Widget for Panel {
                 PanelAction::Fullscreen(self.panel_id),
             );
         }
+
+        // IMPORTANT: Forward all captured actions to the parent so child widget actions
+        // (like TimelineAction::Seek, PlaybackAction, etc.) reach the app
+        cx.extend_actions(actions);
 
         let drag_handle = self.view.view(id!(title_bar.drag_handle));
         let title_bar = self.view.view(id!(title_bar));
@@ -538,6 +544,13 @@ impl Panel {
         &self.panel_id_str
     }
 
+    /// Set the panel title
+    pub fn set_title(&mut self, cx: &mut Cx, title: &str) {
+        self.title = title.to_string();
+        self.needs_visual_update = true;
+        self.view.redraw(cx);
+    }
+
     pub fn set_maximized(&mut self, maximized: bool) {
         self.is_maximized = maximized;
     }
@@ -642,6 +655,13 @@ impl PanelRef {
     /// Get the semantic string ID for this panel
     pub fn panel_id_str(&self) -> Option<String> {
         self.borrow().map(|inner| inner.panel_id_str().to_string())
+    }
+
+    /// Set the panel title
+    pub fn set_title(&self, cx: &mut Cx, title: &str) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_title(cx, title);
+        }
     }
 
     pub fn set_maximized(&self, maximized: bool) {
