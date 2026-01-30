@@ -3,6 +3,7 @@
 //! Manages a grid of Panel widgets with drag-and-drop support.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use makepad_widgets::*;
 use crate::panel::PanelAction;
 use crate::panel::panel::PanelWidgetExt;
@@ -10,10 +11,11 @@ use crate::grid::drop_handler::{DropPosition, calculate_drop_position};
 use crate::grid::layout_state::LayoutState;
 use crate::theme::get_global_dark_mode;
 
-// Thread-local storage for pending layout state (used when set_layout_state is called before first draw)
+// Thread-local storage for pending state (used when methods are called before first draw)
 thread_local! {
     static PENDING_LAYOUT: RefCell<Option<LayoutState>> = RefCell::new(None);
     static PENDING_RESET: RefCell<bool> = RefCell::new(false);
+    static PENDING_TITLES: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
 }
 
 live_design! {
@@ -159,6 +161,10 @@ pub struct PanelGrid {
     /// Current drop target position
     #[rust]
     drop_state: Option<DropPosition>,
+
+    /// Panel titles by panel_id (persists across layout state changes)
+    #[rust]
+    panel_titles: HashMap<String, String>,
 }
 
 /// Helper to convert string panel ID to LiveId
@@ -266,17 +272,26 @@ impl Widget for PanelGrid {
             self.needs_layout_update = true;
         }
 
+        // Check for pending layout (can be set anytime, not just before first draw)
+        let pending = PENDING_LAYOUT.with(|p| p.borrow_mut().take());
+        if let Some(state) = pending {
+            self.layout_state = state;
+            self.needs_layout_update = true;
+        }
+
         // Initialize on first draw
         if !self.initialized {
             self.initialized = true;
 
-            // Check for pending layout from set_layout_state called before first draw
-            let pending = PENDING_LAYOUT.with(|p| p.borrow_mut().take());
-            if let Some(state) = pending {
-                self.layout_state = state;
-            } else {
-                self.layout_state = LayoutState::default();
+            // Check for pending titles from set_panel_titles called before first draw
+            let pending_titles = PENDING_TITLES.with(|p| {
+                let mut titles = p.borrow_mut();
+                std::mem::take(&mut *titles)
+            });
+            if !pending_titles.is_empty() {
+                self.panel_titles.extend(pending_titles);
             }
+
             self.needs_layout_update = true;
         }
 
@@ -305,7 +320,15 @@ impl PanelGrid {
     }
 
     /// Set layout state (for restoring from persistence)
+    ///
+    /// If the state contains panel_titles, they will be merged into the
+    /// PanelGrid's title map, allowing atomic title+layout updates.
     pub fn set_layout_state(&mut self, cx: &mut Cx, state: LayoutState) {
+        // Merge titles from state into PanelGrid's title map
+        // This allows setting titles via LayoutState atomically
+        for (panel_id, title) in &state.panel_titles {
+            self.panel_titles.insert(panel_id.clone(), title.clone());
+        }
         self.layout_state = state;
         self.initialized = true;
         self.needs_layout_update = true;
@@ -461,20 +484,26 @@ impl PanelGrid {
                 });
             }
 
-            // Find which row contains the maximized panel
-            if let Some((row_idx, _)) = self.layout_state.find_panel_row(max_id) {
+            // Find which row and slot contains the maximized panel
+            if let Some((row_idx, slot_idx)) = self.layout_state.find_panel_row(max_id) {
+                eprintln!("=== MAXIMIZE: panel={} row={} slot={} ===", max_id, row_idx, slot_idx);
+
                 // Show only that row
                 self.view.view(row_view_ids[row_idx]).apply_over(cx, live! {
                     visible: true, height: Fill
                 });
 
-                // Show only the maximized panel's slot (use first slot in that row)
-                self.view.view(row_slot_ids[row_idx][0]).apply_over(cx, live! {
+                // Show only the maximized panel's actual slot (not always slot 0!)
+                self.view.view(row_slot_ids[row_idx][slot_idx]).apply_over(cx, live! {
                     visible: true, width: Fill, height: Fill
                 });
-                self.view.panel(row_slot_ids[row_idx][0]).set_panel_id_str(max_id);
-                self.view.panel(row_slot_ids[row_idx][0]).set_panel_index(cx, Self::panel_index_from_id(max_id));
-                self.view.panel(row_slot_ids[row_idx][0]).set_maximized(true);
+                self.view.panel(row_slot_ids[row_idx][slot_idx]).set_panel_id_str(max_id);
+                self.view.panel(row_slot_ids[row_idx][slot_idx]).set_panel_index(cx, Self::panel_index_from_id(max_id));
+                self.view.panel(row_slot_ids[row_idx][slot_idx]).set_maximized(true);
+                // Set title from panel_titles if available
+                if let Some(title) = self.panel_titles.get(max_id) {
+                    self.view.panel(row_slot_ids[row_idx][slot_idx]).set_title(cx, title);
+                }
             }
             return;
         }
@@ -505,6 +534,10 @@ impl PanelGrid {
                     });
                     self.view.panel(row_slot_ids[row_idx][0]).set_panel_id_str(panel_id);
                     self.view.panel(row_slot_ids[row_idx][0]).set_panel_index(cx, Self::panel_index_from_id(panel_id));
+                    // Set title from panel_titles if available
+                    if let Some(title) = self.panel_titles.get(panel_id) {
+                        self.view.panel(row_slot_ids[row_idx][0]).set_title(cx, title);
+                    }
                     break;
                 }
             }
@@ -512,7 +545,7 @@ impl PanelGrid {
         }
 
         // Normal layout: each row shows its assigned panels
-        // First hide all slots
+        // First hide all slots and reset maximized state
         for row_idx in 0..3 {
             for slot_idx in 0..SLOTS_PER_ROW {
                 self.view.view(row_slot_ids[row_idx][slot_idx]).apply_over(cx, live! {
@@ -522,11 +555,20 @@ impl PanelGrid {
             }
         }
 
-        // Configure each row
+        // Configure each row - iterate by position to preserve slot-to-content mapping
         for row_idx in 0..3 {
-            let panels_in_row = &visible_per_row[row_idx];
+            // Get ALL panels in row (including hidden ones) to preserve positions
+            let all_panels_in_row = if row_idx < self.layout_state.row_assignments.len() {
+                &self.layout_state.row_assignments[row_idx]
+            } else {
+                continue;
+            };
 
-            if panels_in_row.is_empty() {
+            // Check if row has any visible panels
+            let has_visible = all_panels_in_row.iter()
+                .any(|id| self.layout_state.visible_panels.contains(id));
+
+            if !has_visible {
                 // Hide empty rows
                 self.view.view(row_view_ids[row_idx]).apply_over(cx, live! {
                     visible: false, height: 0
@@ -537,13 +579,30 @@ impl PanelGrid {
                     visible: true, height: Fill
                 });
 
-                // Show slots for panels in this row
-                for (slot_idx, panel_id) in panels_in_row.iter().take(SLOTS_PER_ROW).enumerate() {
-                    self.view.view(row_slot_ids[row_idx][slot_idx]).apply_over(cx, live! {
-                        visible: true, width: Fill, height: Fill
-                    });
+                // Show/hide slots by POSITION (not by compacted index)
+                // This preserves the mapping between slot position and content widget
+                for (slot_idx, panel_id) in all_panels_in_row.iter().take(SLOTS_PER_ROW).enumerate() {
+                    let is_visible = self.layout_state.visible_panels.contains(panel_id);
+
+                    if is_visible {
+                        self.view.view(row_slot_ids[row_idx][slot_idx]).apply_over(cx, live! {
+                            visible: true, width: Fill, height: Fill
+                        });
+                    } else {
+                        // Keep slot hidden but preserve its position
+                        self.view.view(row_slot_ids[row_idx][slot_idx]).apply_over(cx, live! {
+                            visible: false, width: 0, height: 0
+                        });
+                    }
+
+                    // Always set panel info (even for hidden panels, for consistency)
                     self.view.panel(row_slot_ids[row_idx][slot_idx]).set_panel_id_str(panel_id);
                     self.view.panel(row_slot_ids[row_idx][slot_idx]).set_panel_index(cx, Self::panel_index_from_id(panel_id));
+
+                    // Set title from panel_titles if available
+                    if let Some(title) = self.panel_titles.get(panel_id) {
+                        self.view.panel(row_slot_ids[row_idx][slot_idx]).set_title(cx, title);
+                    }
                 }
             }
         }
@@ -558,12 +617,23 @@ impl PanelGridRef {
 
     /// Set layout state (for restoring from persistence)
     ///
+    /// If the state contains panel_titles, they will be merged into the
+    /// PanelGrid's title map, allowing atomic title+layout updates without
+    /// needing separate calls to set_panel_titles().
+    ///
     /// Note: If called before first draw, stores the state to be applied during initialization.
     pub fn set_layout_state(&self, cx: &mut Cx, state: LayoutState) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_layout_state(cx, state);
         } else {
-            // Store in thread-local for retrieval during first draw
+            // Store titles in pending titles (will be merged during init)
+            PENDING_TITLES.with(|p| {
+                let mut pending = p.borrow_mut();
+                for (panel_id, title) in &state.panel_titles {
+                    pending.insert(panel_id.clone(), title.clone());
+                }
+            });
+            // Store layout in thread-local for retrieval during first draw
             PENDING_LAYOUT.with(|p| *p.borrow_mut() = Some(state));
         }
     }
@@ -615,5 +685,132 @@ impl PanelGridRef {
                 inner.view.panel(*slot_id).apply_dark_mode(cx, dark_mode);
             }
         }
+    }
+
+    /// Set title for a panel by its panel_id
+    /// This title persists across layout state changes
+    pub fn set_panel_title(&self, panel_id: &str, title: &str) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.panel_titles.insert(panel_id.to_string(), title.to_string());
+        } else {
+            // Store in thread-local for retrieval during first draw
+            PENDING_TITLES.with(|p| {
+                p.borrow_mut().insert(panel_id.to_string(), title.to_string());
+            });
+        }
+    }
+
+    /// Set multiple panel titles at once
+    pub fn set_panel_titles(&self, titles: &[(&str, &str)]) {
+        if let Some(mut inner) = self.borrow_mut() {
+            for (panel_id, title) in titles {
+                inner.panel_titles.insert(panel_id.to_string(), title.to_string());
+            }
+        } else {
+            // Store in thread-local for retrieval during first draw
+            PENDING_TITLES.with(|p| {
+                let mut pending = p.borrow_mut();
+                for (panel_id, title) in titles {
+                    pending.insert(panel_id.to_string(), title.to_string());
+                }
+            });
+        }
+    }
+
+    /// Get the slot position for a panel_id
+    ///
+    /// Returns (row_index, slot_index) where:
+    /// - row_index: 0-2 for row1, row2, row3
+    /// - slot_index: position within the row (0-based)
+    ///
+    /// Returns None if the panel is not found in any row.
+    ///
+    /// # Example
+    /// ```ignore
+    /// if let Some((row, slot)) = panel_grid.get_panel_slot("panel_0") {
+    ///     println!("panel_0 is in row {} slot {}", row, slot);
+    /// }
+    /// ```
+    pub fn get_panel_slot(&self, panel_id: &str) -> Option<(usize, usize)> {
+        self.borrow().and_then(|inner| inner.layout_state.find_panel_row(panel_id))
+    }
+
+    /// Get a mapping of all panel_ids to their current slot positions
+    ///
+    /// Returns a HashMap where:
+    /// - Key: panel_id (e.g., "panel_0")
+    /// - Value: (row_index, slot_index) tuple
+    ///
+    /// This is useful for apps that need to track which content
+    /// should be displayed in which slot after drag-and-drop operations.
+    ///
+    /// # Note on Content Management
+    ///
+    /// When using drag-and-drop, panel chrome (title, buttons) moves with the panel_id,
+    /// but content widgets that are statically placed in slots via DSL don't move.
+    ///
+    /// To handle this, apps should either:
+    /// 1. Use dynamic content injection based on panel_id
+    /// 2. Track content separately and swap widget visibility based on slot mapping
+    /// 3. Listen for `PanelAction::LayoutChanged` events and update content accordingly
+    ///
+    /// # Example
+    /// ```ignore
+    /// let mapping = panel_grid.get_slot_mapping();
+    /// for (panel_id, (row, slot)) in &mapping {
+    ///     println!("{} is at row {} slot {}", panel_id, row, slot);
+    /// }
+    /// ```
+    pub fn get_slot_mapping(&self) -> std::collections::HashMap<String, (usize, usize)> {
+        let mut mapping = std::collections::HashMap::new();
+        if let Some(inner) = self.borrow() {
+            for (row_idx, row) in inner.layout_state.row_assignments.iter().enumerate() {
+                for (slot_idx, panel_id) in row.iter().enumerate() {
+                    mapping.insert(panel_id.clone(), (row_idx, slot_idx));
+                }
+            }
+        }
+        mapping
+    }
+
+    /// Get visible panels in display order (row by row, left to right)
+    ///
+    /// Returns a flat list of panel_ids that are currently visible,
+    /// ordered by their visual position (top-left to bottom-right).
+    ///
+    /// This is useful for iterating through panels in display order.
+    pub fn get_visible_panels_ordered(&self) -> Vec<String> {
+        let mut panels = Vec::new();
+        if let Some(inner) = self.borrow() {
+            for row in &inner.layout_state.row_assignments {
+                for panel_id in row {
+                    if inner.layout_state.visible_panels.contains(panel_id) {
+                        panels.push(panel_id.clone());
+                    }
+                }
+            }
+        }
+        panels
+    }
+
+    /// Check if a panel is currently visible
+    pub fn is_panel_visible(&self, panel_id: &str) -> bool {
+        self.borrow()
+            .map(|inner| inner.layout_state.visible_panels.contains(panel_id))
+            .unwrap_or(false)
+    }
+
+    /// Get the panel_id at a specific slot position
+    ///
+    /// Returns the panel_id at the given (row, slot) position, or None if:
+    /// - The position is out of bounds
+    /// - No panel is assigned to that position
+    pub fn get_panel_at_slot(&self, row: usize, slot: usize) -> Option<String> {
+        self.borrow().and_then(|inner| {
+            inner.layout_state.row_assignments
+                .get(row)
+                .and_then(|r| r.get(slot))
+                .cloned()
+        })
     }
 }

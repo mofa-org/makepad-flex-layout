@@ -3,7 +3,7 @@
 //! Provides serializable state for persisting grid layout across sessions.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Layout mode for the panel grid
 #[derive(Clone, Copy, Debug, PartialEq, Default, Serialize, Deserialize)]
@@ -48,6 +48,10 @@ pub struct LayoutState {
 
     /// Selected tab index (for tabbed mode)
     pub selected_tab: usize,
+
+    /// Panel titles by panel_id
+    #[serde(default)]
+    pub panel_titles: HashMap<String, String>,
 }
 
 impl Default for LayoutState {
@@ -62,6 +66,7 @@ impl Default for LayoutState {
             maximized_panel: None,
             layout_mode: LayoutMode::AutoGrid,
             selected_tab: 0,
+            panel_titles: HashMap::new(),
         }
     }
 }
@@ -120,13 +125,15 @@ impl LayoutState {
     }
 
     /// Close a panel (mark as not visible)
+    ///
+    /// Note: The panel stays in row_assignments to preserve slot positions.
+    /// This ensures that when content widgets are statically placed in slots,
+    /// closing a panel hides its slot in place rather than compacting.
     pub fn close_panel(&mut self, panel_id: &str) {
         self.visible_panels.remove(panel_id);
 
-        // Remove from row assignments
-        for row in &mut self.row_assignments {
-            row.retain(|id| id != panel_id);
-        }
+        // Don't remove from row_assignments - preserve slot positions
+        // This is important when content widgets are statically placed in slots
 
         // If closing the maximized panel, exit maximize mode
         if self.maximized_panel.as_deref() == Some(panel_id) {
@@ -165,6 +172,16 @@ impl LayoutState {
 
         // Insert at target position
         self.row_assignments[target_row].insert(insert_col, panel_id.to_string());
+    }
+
+    /// Get the title for a panel
+    pub fn get_panel_title(&self, panel_id: &str) -> Option<&str> {
+        self.panel_titles.get(panel_id).map(|s| s.as_str())
+    }
+
+    /// Set the title for a panel
+    pub fn set_panel_title(&mut self, panel_id: &str, title: &str) {
+        self.panel_titles.insert(panel_id.to_string(), title.to_string());
     }
 }
 

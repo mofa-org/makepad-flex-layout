@@ -25,6 +25,7 @@ use crate::theme::get_global_dark_mode;
 thread_local! {
     static PENDING_FOOTER_LAYOUT: RefCell<Option<FooterLayoutState>> = RefCell::new(None);
     static PENDING_FOOTER_RESET: RefCell<bool> = RefCell::new(false);
+    static PENDING_PANEL_TITLES: RefCell<Vec<(usize, usize, String)>> = RefCell::new(Vec::new());
 }
 
 live_design! {
@@ -283,52 +284,11 @@ pub struct FooterGrid {
 
 impl Widget for FooterGrid {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let actions = cx.capture_actions(|cx| {
-            self.view.handle_event(cx, event, scope);
-        });
+        // IMPORTANT: Don't capture actions - let them propagate to parent widgets
+        // This allows PlaybackControls, Timeline, etc. to emit actions that reach the app
+        self.view.handle_event(cx, event, scope);
 
         let mut layout_changed = false;
-
-        // Handle Panel actions
-        for action in actions.iter() {
-            match action.as_widget_action().cast::<PanelAction>() {
-                PanelAction::Close(id) => {
-                    if let Some(panel_id) = self.find_panel_by_live_id(id) {
-                        self.close_panel(cx, &panel_id);
-                        layout_changed = true;
-                    }
-                }
-                PanelAction::Fullscreen(id) => {
-                    if let Some(panel_id) = self.find_panel_by_live_id(id) {
-                        self.toggle_fullscreen(cx, &panel_id);
-                        layout_changed = true;
-                    }
-                }
-                PanelAction::StartDrag(id) => {
-                    if let Some(panel_id) = self.find_panel_by_live_id(id) {
-                        self.dragging_panel = Some(panel_id);
-                    }
-                }
-                PanelAction::EndDrag(id, abs) => {
-                    // Complete the drop operation
-                    if let Some(panel_id) = self.find_panel_by_live_id(id) {
-                        if self.dragging_panel.as_deref() == Some(&panel_id) {
-                            self.update_drop_target(cx, abs);
-                            self.handle_drop(cx, &panel_id, abs);
-                            layout_changed = true;
-                        }
-                    }
-                    self.dragging_panel = None;
-                    self.drop_target = None;
-                    self.view.redraw(cx);
-                }
-                PanelAction::Maximize(_) => {}
-                PanelAction::LayoutChanged(_) | PanelAction::FooterLayoutChanged(_) | PanelAction::ResetLayout => {
-                    // Ignore - we emit these or handle via thread-local
-                }
-                PanelAction::None => {}
-            }
-        }
 
         // Handle drag-and-drop
         if self.dragging_panel.is_some() {
@@ -395,6 +355,14 @@ impl Widget for FooterGrid {
         if self.needs_layout_update {
             self.needs_layout_update = false;
             self.apply_layout(cx);
+
+            // Apply any pending panel titles after layout is applied
+            let pending_titles: Vec<(usize, usize, String)> = PENDING_PANEL_TITLES.with(|p| {
+                std::mem::take(&mut *p.borrow_mut())
+            });
+            for (slot_idx, panel_idx, title) in pending_titles {
+                self.set_panel_title(cx, slot_idx, panel_idx, &title);
+            }
         }
 
         let result = self.view.draw_walk(cx, scope, walk);
@@ -713,6 +681,18 @@ impl FooterGrid {
         self.needs_layout_update = true;
         self.view.redraw(cx);
     }
+
+    /// Set the title for a specific panel slot
+    /// slot_index: 0-6 for f1_0 through f1_6
+    /// panel_index: 0-4 for p0 through p4 within the slot (usually 0)
+    pub fn set_panel_title(&mut self, cx: &mut Cx, slot_index: usize, panel_index: usize, title: &str) {
+        let slot_ids = Self::slot_ids();
+        let panel_slot_ids = Self::panel_slot_ids();
+
+        if slot_index < slot_ids.len() && panel_index < panel_slot_ids.len() {
+            self.view.view(slot_ids[slot_index]).panel(panel_slot_ids[panel_index]).set_title(cx, title);
+        }
+    }
 }
 
 impl FooterGridRef {
@@ -770,6 +750,22 @@ impl FooterGridRef {
                     inner.view.view(*slot_id).panel(*p_slot_id).apply_dark_mode(cx, dark_mode);
                 }
             }
+        }
+    }
+
+    /// Set the title for a specific panel slot
+    /// slot_index: 0-6 for f1_0 through f1_6
+    /// panel_index: 0-4 for p0 through p4 within the slot (usually 0)
+    ///
+    /// Note: If called before first draw, stores the title to be applied during initialization.
+    pub fn set_panel_title(&self, cx: &mut Cx, slot_index: usize, panel_index: usize, title: &str) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_panel_title(cx, slot_index, panel_index, title);
+        } else {
+            // Store in thread-local for retrieval during first draw
+            PENDING_PANEL_TITLES.with(|p| {
+                p.borrow_mut().push((slot_index, panel_index, title.to_string()));
+            });
         }
     }
 }

@@ -557,6 +557,25 @@ pub fn reset_layout(&mut self, cx: &mut Cx)
 pub fn apply_dark_mode(&self, cx: &mut Cx, dark_mode: f64)
 ```
 
+**FooterGrid (additional)**
+```rust
+// Set panel title by slot and panel index
+// slot_index: 0-6 for f1_0 through f1_6
+// panel_index: 0-4 for p0 through p4 within slot
+pub fn set_panel_title(&self, cx: &mut Cx, slot_index: usize, panel_index: usize, title: &str)
+```
+
+**Panel**
+```rust
+pub fn set_title(&self, cx: &mut Cx, title: &str)      // Set panel title
+pub fn set_panel_index(&self, cx: &mut Cx, index: usize)
+pub fn set_panel_id(&self, id: LiveId)
+pub fn set_panel_id_str(&self, id_str: &str)
+pub fn set_maximized(&self, maximized: bool)
+pub fn set_fullscreen(&self, fullscreen: bool)
+pub fn apply_dark_mode(&self, cx: &mut Cx, dark_mode: f64)
+```
+
 **ShellConfig (Builder)**
 ```rust
 ShellConfig::builder()

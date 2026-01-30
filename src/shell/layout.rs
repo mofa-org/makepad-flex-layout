@@ -476,9 +476,8 @@ pub struct ShellLayout {
 
 impl Widget for ShellLayout {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let actions = cx.capture_actions(|cx| {
-            self.view.handle_event(cx, event, scope);
-        });
+        // Let events flow to children
+        self.view.handle_event(cx, event, scope);
 
         // Hover logic: show overlay sidebar when hovering hamburger or overlay itself
         // Only show overlay if sidebar is not pinned (pinned takes precedence)
@@ -524,53 +523,6 @@ impl Widget for ShellLayout {
                     overlay.set_visible(cx, false);
                     self.view.redraw(cx);
                 }
-            }
-        }
-
-        // Handle header actions
-        for action in actions.iter() {
-            match action.as_widget_action().cast::<ShellHeaderAction>() {
-                ShellHeaderAction::ToggleDarkMode => {
-                    self.toggle_dark_mode(cx);
-                }
-                ShellHeaderAction::HamburgerHoverIn => {
-                    // Hover is now handled via MouseMove tracking in layout
-                    // This action is kept for compatibility but not used
-                }
-                ShellHeaderAction::HamburgerHoverOut => {
-                    // Hover is now handled via MouseMove tracking in layout
-                }
-                ShellHeaderAction::HamburgerClicked => {
-                    // Debounce click events (prevent double-toggle from rapid clicks)
-                    let now = Cx::time_now();
-                    let time_since_last = now - self.last_click_time;
-                    if time_since_last > CLICK_DEBOUNCE_TIME {
-                        self.last_click_time = now;
-                        log!("layout.rs - HamburgerClicked received (delta={:.3}s), toggling sidebar", time_since_last);
-                        // Toggle sidebar expanded/pinned state (click to expand/collapse)
-                        self.toggle_sidebar_expanded(cx);
-                    } else {
-                        log!("layout.rs - HamburgerClicked debounced (delta={:.3}s too fast)", time_since_last);
-                    }
-                }
-                ShellHeaderAction::ResetLayout => {
-                    self.reset_layout(cx);
-                }
-                ShellHeaderAction::SaveLayout => {
-                    self.save_layout(cx);
-                }
-                ShellHeaderAction::None => {}
-            }
-
-            // Capture layout changes from PanelGrid and FooterGrid
-            match action.as_widget_action().cast::<PanelAction>() {
-                PanelAction::LayoutChanged(state) => {
-                    self.current_layout = Some(state);
-                }
-                PanelAction::FooterLayoutChanged(state) => {
-                    self.current_footer_layout = Some(state);
-                }
-                _ => {}
             }
         }
 

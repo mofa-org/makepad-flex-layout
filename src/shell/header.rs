@@ -76,6 +76,14 @@ live_design! {
             }
         }
 
+        // Logo container - apps can override to add custom logo
+        logo_container = <View> {
+            width: Fit
+            height: Fit
+            align: { y: 0.5 }
+            margin: { right: 8 }
+        }
+
         title_label = <Label> {
             draw_text: {
                 instance dark_mode: 0.0
