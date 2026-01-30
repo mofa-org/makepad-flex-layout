@@ -29,7 +29,7 @@ impl DropPosition {
 /// # Arguments
 /// * `abs` - Absolute cursor position
 /// * `container_rect` - The container's rectangle
-/// * `rows_with_panels` - Vector of panel counts per visible row
+/// * `rows_with_panels` - Vector of panel IDs per visible row
 /// * `row_to_actual` - Mapping from visual row index to actual row index
 ///
 /// # Returns
@@ -37,7 +37,7 @@ impl DropPosition {
 pub fn calculate_drop_position(
     abs: DVec2,
     container_rect: Rect,
-    rows_with_panels: &[Vec<u64>],
+    rows_with_panels: &[Vec<String>],
     row_to_actual: &[usize],
 ) -> Option<DropPosition> {
     let num_rows = rows_with_panels.len();

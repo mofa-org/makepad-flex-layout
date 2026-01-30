@@ -5,6 +5,7 @@
 use makepad_widgets::*;
 use crate::panel::PanelAction;
 use crate::theme::colors::panel_colors;
+use crate::theme::get_global_dark_mode;
 
 live_design! {
     use link::theme::*;
@@ -19,20 +20,25 @@ live_design! {
 
         closable: true
         maximizable: true
+        fullscreenable: false
 
         show_bg: true
         draw_bg: {
             instance dark_mode: 0.0
-            instance panel_color: vec4(1.0, 1.0, 1.0, 1.0)
             uniform border_width: 1.0
 
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 // Square corners - no border radius
                 sdf.rect(0.0, 0.0, self.rect_size.x, self.rect_size.y);
-                sdf.fill(self.panel_color);
 
-                // Light border
+                // Panel background - responds to dark_mode
+                let light_bg = vec4(1.0, 1.0, 1.0, 1.0);           // white
+                let dark_bg = vec4(0.122, 0.161, 0.231, 1.0);      // slate-800
+                let bg_color = mix(light_bg, dark_bg, self.dark_mode);
+                sdf.fill(bg_color);
+
+                // Border
                 let border_color = mix(
                     vec4(0.886, 0.910, 0.941, 1.0),  // slate-200
                     vec4(0.200, 0.255, 0.333, 1.0),  // slate-700
@@ -125,6 +131,108 @@ live_design! {
 
             <View> { width: Fill }
 
+            // Fullscreen button (arrows pointing outward)
+            fullscreen_btn = <Button> {
+                width: 20
+                height: 20
+                padding: 0
+                margin: { right: 4 }
+                visible: false
+                text: ""
+                draw_bg: {
+                    instance dark_mode: 0.0
+
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let inset = 5.0;
+                        let arrow_len = 4.0;
+
+                        let light_color = vec4(0.420, 0.447, 0.502, 1.0);
+                        let dark_color = vec4(0.580, 0.639, 0.722, 1.0);
+                        let hover_color = vec4(0.231, 0.510, 0.965, 1.0);
+                        let base = mix(light_color, dark_color, self.dark_mode);
+                        let color = mix(base, hover_color, self.hover);
+
+                        // Four corners with arrows pointing outward
+                        // Top-left arrow
+                        sdf.move_to(inset, inset + arrow_len);
+                        sdf.line_to(inset, inset);
+                        sdf.line_to(inset + arrow_len, inset);
+                        sdf.stroke(color, 1.2);
+
+                        // Top-right arrow
+                        sdf.move_to(self.rect_size.x - inset - arrow_len, inset);
+                        sdf.line_to(self.rect_size.x - inset, inset);
+                        sdf.line_to(self.rect_size.x - inset, inset + arrow_len);
+                        sdf.stroke(color, 1.2);
+
+                        // Bottom-left arrow
+                        sdf.move_to(inset, self.rect_size.y - inset - arrow_len);
+                        sdf.line_to(inset, self.rect_size.y - inset);
+                        sdf.line_to(inset + arrow_len, self.rect_size.y - inset);
+                        sdf.stroke(color, 1.2);
+
+                        // Bottom-right arrow
+                        sdf.move_to(self.rect_size.x - inset - arrow_len, self.rect_size.y - inset);
+                        sdf.line_to(self.rect_size.x - inset, self.rect_size.y - inset);
+                        sdf.line_to(self.rect_size.x - inset, self.rect_size.y - inset - arrow_len);
+                        sdf.stroke(color, 1.2);
+
+                        return sdf.result;
+                    }
+                }
+            }
+
+            // Restore from fullscreen button (arrows pointing inward)
+            restore_fullscreen_btn = <Button> {
+                width: 20
+                height: 20
+                padding: 0
+                margin: { right: 4 }
+                visible: false
+                text: ""
+                draw_bg: {
+                    instance dark_mode: 0.0
+
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let inset = 5.0;
+                        let arrow_len = 4.0;
+                        let cx = self.rect_size.x / 2.0;
+                        let cy = self.rect_size.y / 2.0;
+
+                        let light_color = vec4(0.420, 0.447, 0.502, 1.0);
+                        let dark_color = vec4(0.580, 0.639, 0.722, 1.0);
+                        let hover_color = vec4(0.231, 0.510, 0.965, 1.0);
+                        let base = mix(light_color, dark_color, self.dark_mode);
+                        let color = mix(base, hover_color, self.hover);
+
+                        // Four corners with arrows pointing inward (toward center)
+                        // Top-left pointing to center
+                        sdf.move_to(inset, inset);
+                        sdf.line_to(cx - 2.0, cy - 2.0);
+                        sdf.stroke(color, 1.2);
+
+                        // Top-right pointing to center
+                        sdf.move_to(self.rect_size.x - inset, inset);
+                        sdf.line_to(cx + 2.0, cy - 2.0);
+                        sdf.stroke(color, 1.2);
+
+                        // Bottom-left pointing to center
+                        sdf.move_to(inset, self.rect_size.y - inset);
+                        sdf.line_to(cx - 2.0, cy + 2.0);
+                        sdf.stroke(color, 1.2);
+
+                        // Bottom-right pointing to center
+                        sdf.move_to(self.rect_size.x - inset, self.rect_size.y - inset);
+                        sdf.line_to(cx + 2.0, cy + 2.0);
+                        sdf.stroke(color, 1.2);
+
+                        return sdf.result;
+                    }
+                }
+            }
+
             max_btn = <Button> {
                 width: 20
                 height: 20
@@ -215,26 +323,11 @@ live_design! {
             }
         }
 
-        // Content area
+        // Content area - empty slot for user content injection
         content = <View> {
             width: Fill
             height: Fill
-            padding: 12
-            align: { x: 0.5, y: 0.5 }
-
-            content_label = <Label> {
-                draw_text: {
-                    instance dark_mode: 0.0
-                    text_style: <FONT_SEMIBOLD> { font_size: 24.0 }
-                    fn get_color(self) -> vec4 {
-                        // Light: gray-300, Dark: slate-600
-                        let light = vec4(0.796, 0.835, 0.882, 1.0);
-                        let dark = vec4(0.278, 0.333, 0.412, 1.0);
-                        return mix(light, dark, self.dark_mode);
-                    }
-                }
-                text: "#1"
-            }
+            // Empty - content injected at runtime or via live_design
         }
     }
 }
@@ -244,8 +337,14 @@ pub struct Panel {
     #[deref]
     view: View,
 
-    #[live]
+    /// LiveId for internal identification (hash of panel_id_str)
+    #[rust]
     panel_id: LiveId,
+
+    /// Semantic string ID for this panel (e.g., "editor", "console")
+    /// This is stored separately because LiveId is a hash and can't be reversed
+    #[rust]
+    panel_id_str: String,
 
     #[live]
     title: String,
@@ -256,11 +355,17 @@ pub struct Panel {
     #[live]
     maximizable: bool,
 
+    #[live]
+    fullscreenable: bool,
+
     #[rust]
     panel_index: usize,
 
     #[rust]
     is_maximized: bool,
+
+    #[rust]
+    is_fullscreen: bool,
 
     #[rust]
     is_dragging: bool,
@@ -270,14 +375,23 @@ pub struct Panel {
 
     #[rust]
     needs_visual_update: bool,
+
+    /// Reference to user-provided content widget (for programmatic injection)
+    #[rust]
+    content_widget: Option<WidgetRef>,
 }
 
 impl Widget for Panel {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let actions = cx.capture_actions(|cx| {
-            self.view.handle_event(cx, event, scope);
+        // Push panel ID to scope path so content can identify which panel it's in
+        // Capture actions to check for button clicks, then forward non-Panel actions
+        let actions = scope.with_id(self.panel_id, |scope| {
+            cx.capture_actions(|cx| {
+                self.view.handle_event(cx, event, scope);
+            })
         });
 
+        // Check for Panel-specific button clicks
         if self.view.button(id!(title_bar.close_btn)).clicked(&actions) {
             cx.widget_action(
                 self.widget_uid(),
@@ -296,9 +410,24 @@ impl Widget for Panel {
             );
         }
 
+        if self.view.button(id!(title_bar.fullscreen_btn)).clicked(&actions)
+            || self.view.button(id!(title_bar.restore_fullscreen_btn)).clicked(&actions)
+        {
+            cx.widget_action(
+                self.widget_uid(),
+                &scope.path,
+                PanelAction::Fullscreen(self.panel_id),
+            );
+        }
+
+        // IMPORTANT: Forward all captured actions to the parent so child widget actions
+        // (like TimelineAction::Seek, PlaybackAction, etc.) reach the app
+        cx.extend_actions(actions);
+
         let drag_handle = self.view.view(id!(title_bar.drag_handle));
         let title_bar = self.view.view(id!(title_bar));
 
+        // Handle drag from drag_handle
         let mut handled = false;
         match event.hits(cx, drag_handle.area()) {
             Hit::FingerDown(fe) => {
@@ -318,13 +447,21 @@ impl Widget for Panel {
                 }
                 handled = true;
             }
-            Hit::FingerUp(_) => {
+            Hit::FingerUp(fe) => {
+                if self.is_dragging {
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        PanelAction::EndDrag(self.panel_id, fe.abs),
+                    );
+                }
                 self.is_dragging = false;
                 handled = true;
             }
             _ => {}
         }
 
+        // Also allow dragging from title bar (excluding buttons area)
         if !handled {
             match event.hits(cx, title_bar.area()) {
                 Hit::FingerDown(fe) => {
@@ -341,7 +478,14 @@ impl Widget for Panel {
                         );
                     }
                 }
-                Hit::FingerUp(_) => {
+                Hit::FingerUp(fe) => {
+                    if self.is_dragging {
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &scope.path,
+                            PanelAction::EndDrag(self.panel_id, fe.abs),
+                        );
+                    }
                     self.is_dragging = false;
                 }
                 _ => {}
@@ -350,13 +494,28 @@ impl Widget for Panel {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // Apply global theme on every draw
+        let dm = get_global_dark_mode();
+        self.apply_dark_mode_internal(cx, dm);
+
         self.apply_visual_update(cx);
 
+        // Maximize buttons (for main grid)
         self.view.button(id!(title_bar.max_btn)).set_visible(cx, !self.is_maximized && self.maximizable);
         self.view.button(id!(title_bar.restore_btn)).set_visible(cx, self.is_maximized && self.maximizable);
+
+        // Fullscreen buttons (for footer grid)
+        self.view.button(id!(title_bar.fullscreen_btn)).set_visible(cx, !self.is_fullscreen && self.fullscreenable);
+        self.view.button(id!(title_bar.restore_fullscreen_btn)).set_visible(cx, self.is_fullscreen && self.fullscreenable);
+
+        // Close button
         self.view.button(id!(title_bar.close_btn)).set_visible(cx, self.closable);
 
-        self.view.draw_walk(cx, scope, walk)
+        // Draw with panel ID in scope path so content can identify which panel it's in
+        // Content widgets can access panel ID via: scope.path.from_end(0)
+        scope.with_id(self.panel_id, |scope| {
+            self.view.draw_walk(cx, scope, walk)
+        })
     }
 }
 
@@ -374,8 +533,80 @@ impl Panel {
         self.panel_id = id;
     }
 
+    /// Set both the LiveId and string ID for this panel
+    pub fn set_panel_id_str(&mut self, id_str: &str) {
+        self.panel_id_str = id_str.to_string();
+        self.panel_id = LiveId::from_str_lc(id_str);
+    }
+
+    /// Get the semantic string ID for this panel
+    pub fn panel_id_str(&self) -> &str {
+        &self.panel_id_str
+    }
+
+    /// Set the panel title
+    pub fn set_title(&mut self, cx: &mut Cx, title: &str) {
+        self.title = title.to_string();
+        self.needs_visual_update = true;
+        self.view.redraw(cx);
+    }
+
     pub fn set_maximized(&mut self, maximized: bool) {
         self.is_maximized = maximized;
+    }
+
+    pub fn set_fullscreen(&mut self, fullscreen: bool) {
+        self.is_fullscreen = fullscreen;
+    }
+
+    /// Set custom content widget for this panel
+    pub fn set_content(&mut self, widget: WidgetRef) {
+        self.content_widget = Some(widget);
+    }
+
+    /// Get the content area view for adding children
+    pub fn content_view(&self) -> ViewRef {
+        self.view.view(id!(content))
+    }
+
+    /// Apply dark mode to this panel (internal, called during draw)
+    fn apply_dark_mode_internal(&mut self, cx: &mut Cx, dark_mode: f64) {
+        // Apply to main panel background
+        self.view.apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+        });
+
+        // Apply to title bar
+        self.view.view(id!(title_bar)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+        });
+
+        // Apply to drag handle
+        self.view.view(id!(title_bar.drag_handle)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+        });
+
+        // Apply to title label
+        self.view.label(id!(title_bar.title)).apply_over(cx, live! {
+            draw_text: { dark_mode: (dark_mode) }
+        });
+
+        // Apply to all title bar buttons
+        self.view.button(id!(title_bar.close_btn)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+        });
+        self.view.button(id!(title_bar.max_btn)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+        });
+        self.view.button(id!(title_bar.restore_btn)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+        });
+        self.view.button(id!(title_bar.fullscreen_btn)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+        });
+        self.view.button(id!(title_bar.restore_fullscreen_btn)).apply_over(cx, live! {
+            draw_bg: { dark_mode: (dark_mode) }
+        });
     }
 
     fn apply_visual_update(&mut self, cx: &mut Cx2d) {
@@ -398,9 +629,6 @@ impl Panel {
             self.title.clone()
         };
         self.view.label(id!(title_bar.title)).set_text(cx, &title);
-
-        let content = format!("#{}", index + 1);
-        self.view.label(id!(content.content_label)).set_text(cx, &content);
     }
 }
 
@@ -417,17 +645,87 @@ impl PanelRef {
         }
     }
 
+    /// Set both the LiveId and string ID for this panel
+    pub fn set_panel_id_str(&self, id_str: &str) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_panel_id_str(id_str);
+        }
+    }
+
+    /// Get the semantic string ID for this panel
+    pub fn panel_id_str(&self) -> Option<String> {
+        self.borrow().map(|inner| inner.panel_id_str().to_string())
+    }
+
+    /// Set the panel title
+    pub fn set_title(&self, cx: &mut Cx, title: &str) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_title(cx, title);
+        }
+    }
+
     pub fn set_maximized(&self, maximized: bool) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_maximized(maximized);
         }
     }
 
+    pub fn set_fullscreen(&self, fullscreen: bool) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_fullscreen(fullscreen);
+        }
+    }
+
     pub fn apply_dark_mode(&self, cx: &mut Cx, dark_mode: f64) {
         if let Some(mut inner) = self.borrow_mut() {
+            // Apply to main panel background
             inner.view.apply_over(cx, live! {
                 draw_bg: { dark_mode: (dark_mode) }
             });
+
+            // Apply to title bar
+            inner.view.view(id!(title_bar)).apply_over(cx, live! {
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+
+            // Apply to drag handle
+            inner.view.view(id!(title_bar.drag_handle)).apply_over(cx, live! {
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+
+            // Apply to title label
+            inner.view.label(id!(title_bar.title)).apply_over(cx, live! {
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // Apply to all title bar buttons
+            inner.view.button(id!(title_bar.close_btn)).apply_over(cx, live! {
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(id!(title_bar.max_btn)).apply_over(cx, live! {
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(id!(title_bar.restore_btn)).apply_over(cx, live! {
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(id!(title_bar.fullscreen_btn)).apply_over(cx, live! {
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(id!(title_bar.restore_fullscreen_btn)).apply_over(cx, live! {
+                draw_bg: { dark_mode: (dark_mode) }
+            });
         }
+    }
+
+    /// Set custom content widget for this panel
+    pub fn set_content(&self, widget: WidgetRef) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_content(widget);
+        }
+    }
+
+    /// Get the content area view for adding children
+    pub fn content_view(&self) -> Option<ViewRef> {
+        self.borrow().map(|inner| inner.content_view())
     }
 }

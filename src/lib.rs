@@ -35,6 +35,7 @@ pub mod panel;
 pub mod grid;
 pub mod callbacks;
 pub mod persistence;
+pub mod registry;
 
 mod live_design;
 
@@ -45,9 +46,10 @@ pub mod prelude {
     pub use crate::theme::{ShellTheme, ThemeListener};
     pub use crate::shell::config::ShellConfig;
     pub use crate::panel::{Panel, PanelAction};
-    pub use crate::grid::{PanelGrid, LayoutState};
+    pub use crate::grid::{PanelGrid, FooterGrid, LayoutState};
     pub use crate::callbacks::ShellCallbacks;
     pub use crate::persistence::ShellPreferences;
+    pub use crate::registry::{PanelDefinition, PanelRegistry};
 }
 
 /// Widget exports for use in live_design!
@@ -55,9 +57,9 @@ pub mod widgets {
     pub use crate::shell::layout::{ShellLayout, ShellLayoutRef};
     pub use crate::shell::header::{ShellHeader, ShellHeaderRef};
     pub use crate::shell::footer::{ShellFooter, ShellFooterRef};
-    pub use crate::shell::sidebar::{ShellSidebar, ShellSidebarRef};
+    pub use crate::shell::sidebar::{ShellSidebar, ShellSidebarRef, SidebarAction, SidebarSelection};
     pub use crate::panel::{Panel, PanelRef};
-    pub use crate::grid::{PanelGrid, PanelGridRef};
+    pub use crate::grid::{PanelGrid, PanelGridRef, FooterGrid, FooterGridRef};
 }
 
 /// Register all live_design components with Makepad
@@ -71,12 +73,14 @@ pub fn live_design(cx: &mut Cx) {
     // Register panel widget
     crate::panel::panel::live_design(cx);
 
-    // Register grid widget
+    // Register grid widgets
     crate::grid::panel_grid::live_design(cx);
+    crate::grid::footer_grid::live_design(cx);
 
-    // Register shell components
+    // Register shell components (sidebar_menu must come before sidebar)
     crate::shell::header::live_design(cx);
     crate::shell::footer::live_design(cx);
+    crate::shell::sidebar_menu::live_design(cx);
     crate::shell::sidebar::live_design(cx);
     crate::shell::layout::live_design(cx);
 }
