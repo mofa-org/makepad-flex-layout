@@ -15,12 +15,12 @@ pub mod sidebar;
 pub mod sidebar_menu;
 pub mod layout;
 
-// Re-export live_design functions
-pub use header::live_design as header_live_design;
-pub use footer::live_design as footer_live_design;
-pub use sidebar::live_design as sidebar_live_design;
-pub use sidebar_menu::live_design as sidebar_menu_live_design;
-pub use layout::live_design as layout_live_design;
+// Re-export script_mod functions
+pub use header::script_mod as header_script_mod;
+pub use footer::script_mod as footer_script_mod;
+pub use sidebar::script_mod as sidebar_script_mod;
+pub use sidebar_menu::script_mod as sidebar_menu_script_mod;
+pub use layout::script_mod as layout_script_mod;
 
 pub use config::{ShellConfig, ShellConfigBuilder};
 pub use header::{ShellHeader, ShellHeaderRef};

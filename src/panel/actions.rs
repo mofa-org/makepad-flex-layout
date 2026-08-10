@@ -6,7 +6,7 @@ use crate::grid::{LayoutState, FooterLayoutState};
 /// Actions emitted by Panel widgets to communicate with parent containers.
 ///
 /// These are dispatched via `cx.widget_action()` and handled by PanelGrid/FooterGrid.
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Clone, Debug, Default)]
 pub enum PanelAction {
     /// Panel close button clicked
     Close(LiveId),
@@ -37,5 +37,6 @@ pub enum PanelAction {
     ResetLayout,
 
     /// No action
+    #[default]
     None,
 }

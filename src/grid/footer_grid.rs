@@ -28,16 +28,12 @@ thread_local! {
     static PENDING_PANEL_TITLES: RefCell<Vec<(usize, usize, String)>> = RefCell::new(Vec::new());
 }
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
-
-    use crate::panel::panel::Panel;
-    use crate::shell::sidebar::ShellSidebar;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
     // A slot that can hold multiple vertically stacked panels (up to 5)
-    FooterSlot = <View> {
+    let FooterSlot = View{
         width: Fill
         height: Fill
         flow: Down
@@ -46,34 +42,34 @@ live_design! {
         show_bg: false
 
         // Panel slots (p0 at top, up to p4 at bottom)
-        p0 = <Panel> {
+        p0 := Panel{
             width: Fill, height: Fill
             closable: true
             maximizable: false
             fullscreenable: true
         }
-        p1 = <Panel> {
+        p1 := Panel{
             visible: false
             width: Fill, height: 0
             closable: true
             maximizable: false
             fullscreenable: true
         }
-        p2 = <Panel> {
+        p2 := Panel{
             visible: false
             width: Fill, height: 0
             closable: true
             maximizable: false
             fullscreenable: true
         }
-        p3 = <Panel> {
+        p3 := Panel{
             visible: false
             width: Fill, height: 0
             closable: true
             maximizable: false
             fullscreenable: true
         }
-        p4 = <Panel> {
+        p4 := Panel{
             visible: false
             width: Fill, height: 0
             closable: true
@@ -83,37 +79,38 @@ live_design! {
     }
 
     // Thin splitter for footer with light colors
-    FooterThinSplitter = <Splitter> {
+    let FooterThinSplitter = Splitter{
         size: 1.0
-        draw_bg: {
+        draw_bg +: {
             color: vec4(0.886, 0.910, 0.941, 1.0)     // slate-200 (light)
             color_hover: vec4(0.384, 0.514, 0.965, 1.0)  // blue-500 (highlight)
             color_drag: vec4(0.231, 0.400, 0.900, 1.0)   // blue-600
+            bar_size: 1.0
 
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 // Background changes on hover
-                let bg_normal = vec4(0.945, 0.961, 0.976, 1.0);  // slate-100
-                let bg_hover = vec4(0.925, 0.937, 0.976, 1.0);   // slight blue tint
-                sdf.clear(mix(bg_normal, bg_hover, self.hover));
+                let bg_normal = vec4(0.945, 0.961, 0.976, 1.0)  // slate-100
+                let bg_hover = vec4(0.925, 0.937, 0.976, 1.0)   // slight blue tint
+                sdf.clear(mix(bg_normal, bg_hover, self.hover))
 
                 if self.is_vertical > 0.5 {
                     sdf.box(
                         self.splitter_pad,
-                        self.rect_size.y * 0.5 - self.size * 0.5,
+                        self.rect_size.y * 0.5 - self.bar_size * 0.5,
                         self.rect_size.x - 2.0 * self.splitter_pad,
-                        self.size,
+                        self.bar_size,
                         self.border_radius
-                    );
+                    )
                 }
                 else {
                     sdf.box(
-                        self.rect_size.x * 0.5 - self.size * 0.5,
+                        self.rect_size.x * 0.5 - self.bar_size * 0.5,
                         self.splitter_pad,
-                        self.size,
+                        self.bar_size,
                         self.rect_size.y - 2.0 * self.splitter_pad,
                         self.border_radius
-                    );
+                    )
                 }
 
                 return sdf.fill_keep(
@@ -126,68 +123,69 @@ live_design! {
                         ),
                         self.hover
                     )
-                );
+                )
             }
         }
     }
 
-    pub FooterGrid = {{FooterGrid}} {
+    mod.widgets.FooterGridBase = #(FooterGrid::register_widget(vm))
+    mod.widgets.FooterGrid = set_type_default() do mod.widgets.FooterGridBase{
         width: Fill
         height: Fill
-        cursor: Default
+        cursor: MouseCursor.Default
 
         show_bg: true
-        draw_bg: {
-            instance dark_mode: 0.0
-            fn pixel(self) -> vec4 {
-                let light = vec4(0.945, 0.961, 0.976, 1.0);
-                let dark = vec4(0.122, 0.161, 0.231, 1.0);
-                return mix(light, dark, self.dark_mode);
+        draw_bg +: {
+            dark_mode: instance(0.0)
+            pixel: fn() {
+                let light = vec4(0.945, 0.961, 0.976, 1.0)
+                let dark = vec4(0.122, 0.161, 0.231, 1.0)
+                return mix(light, dark, self.dark_mode)
             }
         }
 
         // Drop preview overlay
-        drop_preview: {
+        drop_preview +: {
             draw_depth: 10.0
-            color: #3b82f680
+            color: #x3b82f680
         }
 
         // Use Dock with independent horizontal splitter
-        dock = <Dock> {
+        dock := Dock{
             width: Fill
             height: Fill
             padding: 0
 
             // Use thin splitter
-            splitter: <FooterThinSplitter> {}
+            splitter: FooterThinSplitter{}
 
             // No corner radius
-            round_corner: {
+            round_corner +: {
                 border_radius: 0.0
             }
 
-            root = Splitter {
-                axis: Horizontal
-                align: FromA(200.0)
-                a: controller_tab
-                b: panel_strip_tab
+            root := DockSplitter{
+                axis: SplitterAxis.Horizontal
+                align: SplitterAlign.FromA(200.0)
+                a: @controller_tab
+                b: @panel_strip_tab
             }
 
-            controller_tab = Tab {
+            controller_tab := DockTab{
                 name: ""
-                kind: controller_content
+                kind: @controller_content
             }
 
-            panel_strip_tab = Tab {
+            panel_strip_tab := DockTab{
                 name: ""
-                kind: panel_strip_content
+                kind: @panel_strip_content
             }
 
-            controller_content = <ShellSidebar> {
+            controller_content := ShellSidebar{
                 title: "Timeline"
             }
 
-            panel_strip_content = <View> {
+            panel_strip_content := View{
                 width: Fill
                 height: Fill
                 flow: Right
@@ -195,22 +193,22 @@ live_design! {
                 spacing: 0
 
                 show_bg: true
-                draw_bg: {
-                    instance dark_mode: 0.0
-                    fn pixel(self) -> vec4 {
-                        let light = vec4(0.886, 0.910, 0.941, 1.0);
-                        let dark = vec4(0.059, 0.090, 0.165, 1.0);
-                        return mix(light, dark, self.dark_mode);
+                draw_bg +: {
+                    dark_mode: instance(0.0)
+                    pixel: fn() {
+                        let light = vec4(0.886, 0.910, 0.941, 1.0)
+                        let dark = vec4(0.059, 0.090, 0.165, 1.0)
+                        return mix(light, dark, self.dark_mode)
                     }
                 }
 
-                f1_0 = <FooterSlot> {}
-                f1_1 = <FooterSlot> {}
-                f1_2 = <FooterSlot> {}
-                f1_3 = <FooterSlot> {}
-                f1_4 = <FooterSlot> {}
-                f1_5 = <FooterSlot> {}
-                f1_6 = <FooterSlot> {}
+                f1_0 := FooterSlot{}
+                f1_1 := FooterSlot{}
+                f1_2 := FooterSlot{}
+                f1_3 := FooterSlot{}
+                f1_4 := FooterSlot{}
+                f1_5 := FooterSlot{}
+                f1_6 := FooterSlot{}
             }
         }
     }
@@ -247,7 +245,7 @@ fn panel_index_from_id(panel_id: &str) -> usize {
 }
 
 /// Footer grid widget with resizable controller sidebar and horizontal panel strip.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct FooterGrid {
     #[deref]
     view: View,
@@ -256,8 +254,8 @@ pub struct FooterGrid {
     drop_preview: DrawColor,
 
     /// Number of initially visible panels (default: 3)
-    #[live(3i64)]
-    initial_panels: i64,
+    #[live(3)]
+    initial_panels: usize,
 
     /// Slot states (visibility, split state, panel IDs)
     #[rust]
@@ -312,7 +310,6 @@ impl Widget for FooterGrid {
         if layout_changed {
             cx.widget_action(
                 self.widget_uid(),
-                &scope.path,
                 PanelAction::FooterLayoutChanged(self.get_layout_state()),
             );
         }
@@ -382,11 +379,11 @@ impl FooterGrid {
     const SLOT_COUNT: usize = 7;
 
     fn slot_ids() -> [&'static [LiveId]; 7] {
-        [id!(f1_0), id!(f1_1), id!(f1_2), id!(f1_3), id!(f1_4), id!(f1_5), id!(f1_6)]
+        [ids!(f1_0), ids!(f1_1), ids!(f1_2), ids!(f1_3), ids!(f1_4), ids!(f1_5), ids!(f1_6)]
     }
 
     fn initialize_slots(&mut self) {
-        let count = self.initial_panels.max(0) as usize;
+        let count = self.initial_panels;
         self.slots = (0..Self::SLOT_COUNT)
             .map(|i| SlotState {
                 visible: i < count,
@@ -397,17 +394,20 @@ impl FooterGrid {
 
     /// Apply dark mode to this grid (internal, called during draw)
     fn apply_dark_mode_internal(&mut self, cx: &mut Cx, dark_mode: f64) {
-        self.view.apply_over(cx, live! {
-            draw_bg: { dark_mode: (dark_mode) }
+        script_apply_eval!(cx, self.view, {
+            draw_bg +: { dark_mode: #(dark_mode) }
         });
 
-        self.view.view(id!(panel_strip_content)).apply_over(cx, live! {
-            draw_bg: { dark_mode: (dark_mode) }
-        });
+        let mut strip = self.view.view(cx, ids!(panel_strip_content));
+        if strip.borrow().is_some() {
+            script_apply_eval!(cx, strip, {
+                draw_bg +: { dark_mode: #(dark_mode) }
+            });
+        }
     }
 
     fn panel_slot_ids() -> [&'static [LiveId]; 5] {
-        [id!(p0), id!(p1), id!(p2), id!(p3), id!(p4)]
+        [ids!(p0), ids!(p1), ids!(p2), ids!(p3), ids!(p4)]
     }
 
     /// Find panel string ID by LiveId (reverse lookup through all slot panels)
@@ -429,16 +429,13 @@ impl FooterGrid {
         if let Some(ref fs_id) = self.fullscreen_panel.clone() {
             // Hide all slots
             for (i, slot_id) in slot_ids.iter().enumerate() {
-                self.view.view(*slot_id).apply_over(cx, live! {
-                    visible: false, width: 0, height: 0
-                });
+                let slot_view = self.view.view(cx, *slot_id);
+                slot_view.set_visible(cx, false);
 
                 // Find and show only the fullscreen panel
                 if let Some(slot) = self.slots.get(i) {
                     if slot.panel_ids.contains(&fs_id) {
-                        self.view.view(*slot_id).apply_over(cx, live! {
-                            visible: true, width: Fill, height: Fill
-                        });
+                        slot_view.set_visible(cx, true);
                         // Configure as single panel in fullscreen
                         self.configure_slot(cx, *slot_id, &[fs_id.clone()], true);
                     }
@@ -450,16 +447,13 @@ impl FooterGrid {
         // Normal layout
         for (i, slot_id) in slot_ids.iter().enumerate() {
             if let Some(slot) = self.slots.get(i) {
+                let slot_view = self.view.view(cx, *slot_id);
                 if !slot.visible || slot.panel_ids.is_empty() {
-                    self.view.view(*slot_id).apply_over(cx, live! {
-                        visible: false, width: 0, height: 0
-                    });
+                    slot_view.set_visible(cx, false);
                     continue;
                 }
 
-                self.view.view(*slot_id).apply_over(cx, live! {
-                    visible: true, width: Fill, height: Fill
-                });
+                slot_view.set_visible(cx, true);
 
                 // Clone panel_ids to avoid borrow conflict
                 let panel_ids = slot.panel_ids.clone();
@@ -473,20 +467,19 @@ impl FooterGrid {
         let count = panel_ids.len().min(5);
 
         for (i, p_slot_id) in panel_slot_ids.iter().enumerate() {
+            let slot = self.view.widget(cx, slot_id);
             if i < count {
                 // Show this panel
-                self.view.view(slot_id).view(*p_slot_id).apply_over(cx, live! {
-                    visible: true, width: Fill, height: Fill
-                });
-                let panel_ref = self.view.view(slot_id).panel(*p_slot_id);
+                let p_view = slot.view(cx, *p_slot_id);
+                p_view.set_visible(cx, true);
+                let panel_ref = slot.panel(cx, *p_slot_id);
                 panel_ref.set_panel_id_str(&panel_ids[i]);
                 panel_ref.set_panel_index(cx, panel_index_from_id(&panel_ids[i]));
                 panel_ref.set_fullscreen(is_fullscreen && count == 1);
             } else {
                 // Hide unused panel slots
-                self.view.view(slot_id).view(*p_slot_id).apply_over(cx, live! {
-                    visible: false, width: Fill, height: 0
-                });
+                let p_view = slot.view(cx, *p_slot_id);
+                p_view.set_visible(cx, false);
             }
         }
     }
@@ -541,7 +534,7 @@ impl FooterGrid {
                     }
                 }
 
-                let slot_view = self.view.view(*slot_id);
+                let slot_view = self.view.view(cx, *slot_id);
                 let rect = slot_view.area().rect(cx);
 
                 if rect.contains(abs) {
@@ -561,7 +554,7 @@ impl FooterGrid {
             return None;
         }
 
-        let slot_view = self.view.view(slot_ids[slot_idx]);
+        let slot_view = self.view.view(cx, slot_ids[slot_idx]);
         let rect = slot_view.area().rect(cx);
 
         if rect.size.x <= 0.0 || rect.size.y <= 0.0 {
@@ -690,7 +683,7 @@ impl FooterGrid {
         let panel_slot_ids = Self::panel_slot_ids();
 
         if slot_index < slot_ids.len() && panel_index < panel_slot_ids.len() {
-            self.view.view(slot_ids[slot_index]).panel(panel_slot_ids[panel_index]).set_title(cx, title);
+            self.view.widget(cx, slot_ids[slot_index]).panel(cx, panel_slot_ids[panel_index]).set_title(cx, title);
         }
     }
 }
@@ -732,22 +725,26 @@ impl FooterGridRef {
 
     pub fn apply_dark_mode(&self, cx: &mut Cx, dark_mode: f64) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.view.apply_over(cx, live! {
-                draw_bg: { dark_mode: (dark_mode) }
+            script_apply_eval!(cx, inner.view, {
+                draw_bg +: { dark_mode: #(dark_mode) }
             });
 
-            inner.view.view(id!(panel_strip_content)).apply_over(cx, live! {
-                draw_bg: { dark_mode: (dark_mode) }
-            });
+            let mut strip = inner.view.view(cx, ids!(panel_strip_content));
+            if strip.borrow().is_some() {
+                script_apply_eval!(cx, strip, {
+                    draw_bg +: { dark_mode: #(dark_mode) }
+                });
+            }
 
-            inner.view.shell_sidebar(id!(controller_content)).apply_dark_mode(cx, dark_mode);
+            inner.view.shell_sidebar(cx, ids!(controller_content)).apply_dark_mode(cx, dark_mode);
 
             // Apply to all panel slots (p0-p4 in each slot)
             let slot_ids = FooterGrid::slot_ids();
             let panel_slot_ids = FooterGrid::panel_slot_ids();
             for slot_id in &slot_ids {
+                let slot = inner.view.widget(cx, *slot_id);
                 for p_slot_id in &panel_slot_ids {
-                    inner.view.view(*slot_id).panel(*p_slot_id).apply_dark_mode(cx, dark_mode);
+                    slot.panel(cx, *p_slot_id).apply_dark_mode(cx, dark_mode);
                 }
             }
         }

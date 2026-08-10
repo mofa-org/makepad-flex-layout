@@ -18,97 +18,94 @@ thread_local! {
     static PENDING_TITLES: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
 }
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
-
-    // Import Panel widget - must use crate path for cross-module visibility
-    use crate::panel::panel::Panel;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
     // ========================================
     // PANEL GRID WIDGET
     // ========================================
 
-    pub PanelGrid = {{PanelGrid}} {
+    mod.widgets.PanelGridBase = #(PanelGrid::register_widget(vm))
+    mod.widgets.PanelGrid = set_type_default() do mod.widgets.PanelGridBase{
         width: Fill
         height: Fill
         padding: 0
-        cursor: Default
+        cursor: MouseCursor.Default
 
         show_bg: true
-        draw_bg: {
-            instance dark_mode: 0.0
-            fn pixel(self) -> vec4 {
+        draw_bg +: {
+            dark_mode: instance(0.0)
+            pixel: fn() {
                 // Light: slate-200, Dark: slate-900
-                let light = vec4(0.886, 0.910, 0.941, 1.0);
-                let dark = vec4(0.059, 0.090, 0.165, 1.0);
-                return mix(light, dark, self.dark_mode);
+                let light = vec4(0.886, 0.910, 0.941, 1.0)
+                let dark = vec4(0.059, 0.090, 0.165, 1.0)
+                return mix(light, dark, self.dark_mode)
             }
         }
 
         // Drop preview overlay
-        drop_preview: {
+        drop_preview +: {
             draw_depth: 10.0
-            color: #4080c080
+            color: #x4080c080
         }
 
         // Container with explicit row structure for precise layout
         // Each row has 9 slots to allow all panels in one row if desired
-        window_container = <View> {
+        window_container := View{
             width: Fill
             height: Fill
             flow: Down
 
             // Row 1: up to 9 panels
-            row1 = <View> {
+            row1 := View{
                 width: Fill
                 height: Fill
                 flow: Right
 
-                s1_1 = <Panel> { width: Fill, height: Fill }
-                s1_2 = <Panel> { width: Fill, height: Fill }
-                s1_3 = <Panel> { width: Fill, height: Fill }
-                s1_4 = <Panel> { width: Fill, height: Fill }
-                s1_5 = <Panel> { width: Fill, height: Fill }
-                s1_6 = <Panel> { width: Fill, height: Fill }
-                s1_7 = <Panel> { width: Fill, height: Fill }
-                s1_8 = <Panel> { width: Fill, height: Fill }
-                s1_9 = <Panel> { width: Fill, height: Fill }
+                s1_1 := Panel{ width: Fill, height: Fill }
+                s1_2 := Panel{ width: Fill, height: Fill }
+                s1_3 := Panel{ width: Fill, height: Fill }
+                s1_4 := Panel{ width: Fill, height: Fill }
+                s1_5 := Panel{ width: Fill, height: Fill }
+                s1_6 := Panel{ width: Fill, height: Fill }
+                s1_7 := Panel{ width: Fill, height: Fill }
+                s1_8 := Panel{ width: Fill, height: Fill }
+                s1_9 := Panel{ width: Fill, height: Fill }
             }
 
             // Row 2: up to 9 panels
-            row2 = <View> {
+            row2 := View{
                 width: Fill
                 height: Fill
                 flow: Right
 
-                s2_1 = <Panel> { width: Fill, height: Fill }
-                s2_2 = <Panel> { width: Fill, height: Fill }
-                s2_3 = <Panel> { width: Fill, height: Fill }
-                s2_4 = <Panel> { width: Fill, height: Fill }
-                s2_5 = <Panel> { width: Fill, height: Fill }
-                s2_6 = <Panel> { width: Fill, height: Fill }
-                s2_7 = <Panel> { width: Fill, height: Fill }
-                s2_8 = <Panel> { width: Fill, height: Fill }
-                s2_9 = <Panel> { width: Fill, height: Fill }
+                s2_1 := Panel{ width: Fill, height: Fill }
+                s2_2 := Panel{ width: Fill, height: Fill }
+                s2_3 := Panel{ width: Fill, height: Fill }
+                s2_4 := Panel{ width: Fill, height: Fill }
+                s2_5 := Panel{ width: Fill, height: Fill }
+                s2_6 := Panel{ width: Fill, height: Fill }
+                s2_7 := Panel{ width: Fill, height: Fill }
+                s2_8 := Panel{ width: Fill, height: Fill }
+                s2_9 := Panel{ width: Fill, height: Fill }
             }
 
             // Row 3: up to 9 panels
-            row3 = <View> {
+            row3 := View{
                 width: Fill
                 height: Fill
                 flow: Right
 
-                s3_1 = <Panel> { width: Fill, height: Fill }
-                s3_2 = <Panel> { width: Fill, height: Fill }
-                s3_3 = <Panel> { width: Fill, height: Fill }
-                s3_4 = <Panel> { width: Fill, height: Fill }
-                s3_5 = <Panel> { width: Fill, height: Fill }
-                s3_6 = <Panel> { width: Fill, height: Fill }
-                s3_7 = <Panel> { width: Fill, height: Fill }
-                s3_8 = <Panel> { width: Fill, height: Fill }
-                s3_9 = <Panel> { width: Fill, height: Fill }
+                s3_1 := Panel{ width: Fill, height: Fill }
+                s3_2 := Panel{ width: Fill, height: Fill }
+                s3_3 := Panel{ width: Fill, height: Fill }
+                s3_4 := Panel{ width: Fill, height: Fill }
+                s3_5 := Panel{ width: Fill, height: Fill }
+                s3_6 := Panel{ width: Fill, height: Fill }
+                s3_7 := Panel{ width: Fill, height: Fill }
+                s3_8 := Panel{ width: Fill, height: Fill }
+                s3_9 := Panel{ width: Fill, height: Fill }
             }
         }
     }
@@ -128,8 +125,8 @@ live_design! {
 /// ## Slot System
 /// Each row has 9 pre-defined slots (s1_1 through s1_9, etc.). Panels are
 /// assigned to slots dynamically based on row_assignments. Unused slots are
-/// hidden with `width: 0, height: 0`.
-#[derive(Live, LiveHook, Widget)]
+/// hidden.
+#[derive(Script, ScriptHook, Widget)]
 pub struct PanelGrid {
     #[deref]
     view: View,
@@ -248,7 +245,6 @@ impl Widget for PanelGrid {
         if layout_changed {
             cx.widget_action(
                 self.widget_uid(),
-                &scope.path,
                 PanelAction::LayoutChanged(self.layout_state.clone()),
             );
         }
@@ -257,8 +253,8 @@ impl Widget for PanelGrid {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // Apply global theme on every draw
         let dm = get_global_dark_mode();
-        self.view.apply_over(cx, live! {
-            draw_bg: { dark_mode: (dm) }
+        script_apply_eval!(cx, self.view, {
+            draw_bg +: { dark_mode: #(dm) }
         });
 
         // Check for pending reset
@@ -381,7 +377,7 @@ impl PanelGrid {
         }
 
         // Get the container rect
-        let container = self.view.view(id!(window_container));
+        let container = self.view.view(cx, ids!(window_container));
         let container_rect = container.area().rect(cx);
 
         calculate_drop_position(abs, container_rect, &rows_with_panels, &row_to_actual)
@@ -419,44 +415,44 @@ impl PanelGrid {
         // Slot IDs organized by row (9 slots per row)
         let row_slot_ids = [
             [
-                id!(window_container.row1.s1_1),
-                id!(window_container.row1.s1_2),
-                id!(window_container.row1.s1_3),
-                id!(window_container.row1.s1_4),
-                id!(window_container.row1.s1_5),
-                id!(window_container.row1.s1_6),
-                id!(window_container.row1.s1_7),
-                id!(window_container.row1.s1_8),
-                id!(window_container.row1.s1_9),
+                ids!(window_container.row1.s1_1),
+                ids!(window_container.row1.s1_2),
+                ids!(window_container.row1.s1_3),
+                ids!(window_container.row1.s1_4),
+                ids!(window_container.row1.s1_5),
+                ids!(window_container.row1.s1_6),
+                ids!(window_container.row1.s1_7),
+                ids!(window_container.row1.s1_8),
+                ids!(window_container.row1.s1_9),
             ],
             [
-                id!(window_container.row2.s2_1),
-                id!(window_container.row2.s2_2),
-                id!(window_container.row2.s2_3),
-                id!(window_container.row2.s2_4),
-                id!(window_container.row2.s2_5),
-                id!(window_container.row2.s2_6),
-                id!(window_container.row2.s2_7),
-                id!(window_container.row2.s2_8),
-                id!(window_container.row2.s2_9),
+                ids!(window_container.row2.s2_1),
+                ids!(window_container.row2.s2_2),
+                ids!(window_container.row2.s2_3),
+                ids!(window_container.row2.s2_4),
+                ids!(window_container.row2.s2_5),
+                ids!(window_container.row2.s2_6),
+                ids!(window_container.row2.s2_7),
+                ids!(window_container.row2.s2_8),
+                ids!(window_container.row2.s2_9),
             ],
             [
-                id!(window_container.row3.s3_1),
-                id!(window_container.row3.s3_2),
-                id!(window_container.row3.s3_3),
-                id!(window_container.row3.s3_4),
-                id!(window_container.row3.s3_5),
-                id!(window_container.row3.s3_6),
-                id!(window_container.row3.s3_7),
-                id!(window_container.row3.s3_8),
-                id!(window_container.row3.s3_9),
+                ids!(window_container.row3.s3_1),
+                ids!(window_container.row3.s3_2),
+                ids!(window_container.row3.s3_3),
+                ids!(window_container.row3.s3_4),
+                ids!(window_container.row3.s3_5),
+                ids!(window_container.row3.s3_6),
+                ids!(window_container.row3.s3_7),
+                ids!(window_container.row3.s3_8),
+                ids!(window_container.row3.s3_9),
             ],
         ];
 
         let row_view_ids = [
-            id!(window_container.row1),
-            id!(window_container.row2),
-            id!(window_container.row3),
+            ids!(window_container.row1),
+            ids!(window_container.row2),
+            ids!(window_container.row3),
         ];
 
         // Get visible panels per row
@@ -475,13 +471,9 @@ impl PanelGrid {
             // Hide all slots and rows first
             for row_idx in 0..3 {
                 for slot_idx in 0..SLOTS_PER_ROW {
-                    self.view.view(row_slot_ids[row_idx][slot_idx]).apply_over(cx, live! {
-                        visible: false, width: 0, height: 0
-                    });
+                    self.view.widget(cx, row_slot_ids[row_idx][slot_idx]).set_visible(cx, false);
                 }
-                self.view.view(row_view_ids[row_idx]).apply_over(cx, live! {
-                    visible: false, height: 0
-                });
+                self.view.view(cx, row_view_ids[row_idx]).set_visible(cx, false);
             }
 
             // Find which row and slot contains the maximized panel
@@ -489,20 +481,16 @@ impl PanelGrid {
                 eprintln!("=== MAXIMIZE: panel={} row={} slot={} ===", max_id, row_idx, slot_idx);
 
                 // Show only that row
-                self.view.view(row_view_ids[row_idx]).apply_over(cx, live! {
-                    visible: true, height: Fill
-                });
+                self.view.view(cx, row_view_ids[row_idx]).set_visible(cx, true);
 
                 // Show only the maximized panel's actual slot (not always slot 0!)
-                self.view.view(row_slot_ids[row_idx][slot_idx]).apply_over(cx, live! {
-                    visible: true, width: Fill, height: Fill
-                });
-                self.view.panel(row_slot_ids[row_idx][slot_idx]).set_panel_id_str(max_id);
-                self.view.panel(row_slot_ids[row_idx][slot_idx]).set_panel_index(cx, Self::panel_index_from_id(max_id));
-                self.view.panel(row_slot_ids[row_idx][slot_idx]).set_maximized(true);
+                self.view.widget(cx, row_slot_ids[row_idx][slot_idx]).set_visible(cx, true);
+                self.view.panel(cx, row_slot_ids[row_idx][slot_idx]).set_panel_id_str(max_id);
+                self.view.panel(cx, row_slot_ids[row_idx][slot_idx]).set_panel_index(cx, Self::panel_index_from_id(max_id));
+                self.view.panel(cx, row_slot_ids[row_idx][slot_idx]).set_maximized(true);
                 // Set title from panel_titles if available
                 if let Some(title) = self.panel_titles.get(max_id) {
-                    self.view.panel(row_slot_ids[row_idx][slot_idx]).set_title(cx, title);
+                    self.view.panel(cx, row_slot_ids[row_idx][slot_idx]).set_title(cx, title);
                 }
             }
             return;
@@ -513,30 +501,22 @@ impl PanelGrid {
             // Hide all first
             for row_idx in 0..3 {
                 for slot_idx in 0..SLOTS_PER_ROW {
-                    self.view.view(row_slot_ids[row_idx][slot_idx]).apply_over(cx, live! {
-                        visible: false, width: 0, height: 0
-                    });
+                    self.view.widget(cx, row_slot_ids[row_idx][slot_idx]).set_visible(cx, false);
                 }
-                self.view.view(row_view_ids[row_idx]).apply_over(cx, live! {
-                    visible: false, height: 0
-                });
+                self.view.view(cx, row_view_ids[row_idx]).set_visible(cx, false);
             }
 
             // Find the only visible panel
             for row_idx in 0..3 {
                 if !visible_per_row[row_idx].is_empty() {
                     let panel_id = &visible_per_row[row_idx][0];
-                    self.view.view(row_view_ids[row_idx]).apply_over(cx, live! {
-                        visible: true, height: Fill
-                    });
-                    self.view.view(row_slot_ids[row_idx][0]).apply_over(cx, live! {
-                        visible: true, width: Fill, height: Fill
-                    });
-                    self.view.panel(row_slot_ids[row_idx][0]).set_panel_id_str(panel_id);
-                    self.view.panel(row_slot_ids[row_idx][0]).set_panel_index(cx, Self::panel_index_from_id(panel_id));
+                    self.view.view(cx, row_view_ids[row_idx]).set_visible(cx, true);
+                    self.view.widget(cx, row_slot_ids[row_idx][0]).set_visible(cx, true);
+                    self.view.panel(cx, row_slot_ids[row_idx][0]).set_panel_id_str(panel_id);
+                    self.view.panel(cx, row_slot_ids[row_idx][0]).set_panel_index(cx, Self::panel_index_from_id(panel_id));
                     // Set title from panel_titles if available
                     if let Some(title) = self.panel_titles.get(panel_id) {
-                        self.view.panel(row_slot_ids[row_idx][0]).set_title(cx, title);
+                        self.view.panel(cx, row_slot_ids[row_idx][0]).set_title(cx, title);
                     }
                     break;
                 }
@@ -548,10 +528,8 @@ impl PanelGrid {
         // First hide all slots and reset maximized state
         for row_idx in 0..3 {
             for slot_idx in 0..SLOTS_PER_ROW {
-                self.view.view(row_slot_ids[row_idx][slot_idx]).apply_over(cx, live! {
-                    visible: false, width: 0, height: 0
-                });
-                self.view.panel(row_slot_ids[row_idx][slot_idx]).set_maximized(false);
+                self.view.widget(cx, row_slot_ids[row_idx][slot_idx]).set_visible(cx, false);
+                self.view.panel(cx, row_slot_ids[row_idx][slot_idx]).set_maximized(false);
             }
         }
 
@@ -570,14 +548,10 @@ impl PanelGrid {
 
             if !has_visible {
                 // Hide empty rows
-                self.view.view(row_view_ids[row_idx]).apply_over(cx, live! {
-                    visible: false, height: 0
-                });
+                self.view.view(cx, row_view_ids[row_idx]).set_visible(cx, false);
             } else {
                 // Show row
-                self.view.view(row_view_ids[row_idx]).apply_over(cx, live! {
-                    visible: true, height: Fill
-                });
+                self.view.view(cx, row_view_ids[row_idx]).set_visible(cx, true);
 
                 // Show/hide slots by POSITION (not by compacted index)
                 // This preserves the mapping between slot position and content widget
@@ -585,23 +559,19 @@ impl PanelGrid {
                     let is_visible = self.layout_state.visible_panels.contains(panel_id);
 
                     if is_visible {
-                        self.view.view(row_slot_ids[row_idx][slot_idx]).apply_over(cx, live! {
-                            visible: true, width: Fill, height: Fill
-                        });
+                        self.view.widget(cx, row_slot_ids[row_idx][slot_idx]).set_visible(cx, true);
                     } else {
                         // Keep slot hidden but preserve its position
-                        self.view.view(row_slot_ids[row_idx][slot_idx]).apply_over(cx, live! {
-                            visible: false, width: 0, height: 0
-                        });
+                        self.view.widget(cx, row_slot_ids[row_idx][slot_idx]).set_visible(cx, false);
                     }
 
                     // Always set panel info (even for hidden panels, for consistency)
-                    self.view.panel(row_slot_ids[row_idx][slot_idx]).set_panel_id_str(panel_id);
-                    self.view.panel(row_slot_ids[row_idx][slot_idx]).set_panel_index(cx, Self::panel_index_from_id(panel_id));
+                    self.view.panel(cx, row_slot_ids[row_idx][slot_idx]).set_panel_id_str(panel_id);
+                    self.view.panel(cx, row_slot_ids[row_idx][slot_idx]).set_panel_index(cx, Self::panel_index_from_id(panel_id));
 
                     // Set title from panel_titles if available
                     if let Some(title) = self.panel_titles.get(panel_id) {
-                        self.view.panel(row_slot_ids[row_idx][slot_idx]).set_title(cx, title);
+                        self.view.panel(cx, row_slot_ids[row_idx][slot_idx]).set_title(cx, title);
                     }
                 }
             }
@@ -655,34 +625,34 @@ impl PanelGridRef {
     pub fn apply_dark_mode(&self, cx: &mut Cx, dark_mode: f64) {
         if let Some(mut inner) = self.borrow_mut() {
             // Apply to grid background
-            inner.view.apply_over(cx, live! {
-                draw_bg: { dark_mode: (dark_mode) }
+            script_apply_eval!(cx, inner.view, {
+                draw_bg +: { dark_mode: #(dark_mode) }
             });
 
             // Apply to all panels in all slots
             let slot_ids = [
                 // Row 1
-                id!(window_container.row1.s1_1), id!(window_container.row1.s1_2),
-                id!(window_container.row1.s1_3), id!(window_container.row1.s1_4),
-                id!(window_container.row1.s1_5), id!(window_container.row1.s1_6),
-                id!(window_container.row1.s1_7), id!(window_container.row1.s1_8),
-                id!(window_container.row1.s1_9),
+                ids!(window_container.row1.s1_1), ids!(window_container.row1.s1_2),
+                ids!(window_container.row1.s1_3), ids!(window_container.row1.s1_4),
+                ids!(window_container.row1.s1_5), ids!(window_container.row1.s1_6),
+                ids!(window_container.row1.s1_7), ids!(window_container.row1.s1_8),
+                ids!(window_container.row1.s1_9),
                 // Row 2
-                id!(window_container.row2.s2_1), id!(window_container.row2.s2_2),
-                id!(window_container.row2.s2_3), id!(window_container.row2.s2_4),
-                id!(window_container.row2.s2_5), id!(window_container.row2.s2_6),
-                id!(window_container.row2.s2_7), id!(window_container.row2.s2_8),
-                id!(window_container.row2.s2_9),
+                ids!(window_container.row2.s2_1), ids!(window_container.row2.s2_2),
+                ids!(window_container.row2.s2_3), ids!(window_container.row2.s2_4),
+                ids!(window_container.row2.s2_5), ids!(window_container.row2.s2_6),
+                ids!(window_container.row2.s2_7), ids!(window_container.row2.s2_8),
+                ids!(window_container.row2.s2_9),
                 // Row 3
-                id!(window_container.row3.s3_1), id!(window_container.row3.s3_2),
-                id!(window_container.row3.s3_3), id!(window_container.row3.s3_4),
-                id!(window_container.row3.s3_5), id!(window_container.row3.s3_6),
-                id!(window_container.row3.s3_7), id!(window_container.row3.s3_8),
-                id!(window_container.row3.s3_9),
+                ids!(window_container.row3.s3_1), ids!(window_container.row3.s3_2),
+                ids!(window_container.row3.s3_3), ids!(window_container.row3.s3_4),
+                ids!(window_container.row3.s3_5), ids!(window_container.row3.s3_6),
+                ids!(window_container.row3.s3_7), ids!(window_container.row3.s3_8),
+                ids!(window_container.row3.s3_9),
             ];
 
             for slot_id in &slot_ids {
-                inner.view.panel(*slot_id).apply_dark_mode(cx, dark_mode);
+                inner.view.panel(cx, *slot_id).apply_dark_mode(cx, dark_mode);
             }
         }
     }
