@@ -25,25 +25,21 @@ script_mod! {
         draw_bg +: {
             dark_mode: instance(0.0)
             border_width: uniform(1.0)
+            bg_light: uniform(mod.widgets.shell.BG_PANEL_L)
+            bg_dark: uniform(mod.widgets.shell.BG_PANEL_D)
+            border_light: uniform(mod.widgets.shell.BORDER_L)
+            border_dark: uniform(mod.widgets.shell.BORDER_D)
 
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 // Square corners - no border radius
                 sdf.rect(0.0, 0.0, self.rect_size.x, self.rect_size.y)
 
-                // Panel background - responds to dark_mode
-                let light_bg = vec4(1.0, 1.0, 1.0, 1.0)           // ux surface (light)
-                let dark_bg = vec4(0.102, 0.122, 0.161, 1.0)      // ux #1A1F29
-                let bg_color = mix(light_bg, dark_bg, self.dark_mode)
-                sdf.fill(bg_color)
-
-                // Border
-                let border_color = mix(
-                    vec4(0.890, 0.906, 0.937, 1.0),  // ux #E3E7EF
-                    vec4(0.149, 0.176, 0.231, 1.0),  // ux #262D3B
-                    self.dark_mode
+                sdf.fill(mix(self.bg_light, self.bg_dark, self.dark_mode))
+                sdf.stroke(
+                    mix(self.border_light, self.border_dark, self.dark_mode),
+                    self.border_width
                 )
-                sdf.stroke(border_color, self.border_width)
                 return sdf.result
             }
         }
@@ -62,13 +58,15 @@ script_mod! {
             show_bg: true
             draw_bg +: {
                 dark_mode: instance(0.0)
+                bg_light: uniform(mod.widgets.shell.BG_PANEL_TITLE_L)
+                bg_dark: uniform(mod.widgets.shell.BG_PANEL_TITLE_D)
+                edge_light: uniform(mod.widgets.shell.BORDER_L)
+                edge_dark: uniform(mod.widgets.shell.BORDER_D)
                 pixel: fn() {
                     // Title bar sits flush with the panel body, separated by a
                     // hairline rather than a filled band (ux system).
-                    let light = vec4(1.0, 1.0, 1.0, 1.0)
-                    let dark = vec4(0.102, 0.122, 0.161, 1.0)
-                    let base = mix(light, dark, self.dark_mode)
-                    let edge = mix(vec4(0.906, 0.921, 0.949, 1.0), vec4(0.149, 0.176, 0.231, 1.0), self.dark_mode)
+                    let base = mix(self.bg_light, self.bg_dark, self.dark_mode)
+                    let edge = mix(self.edge_light, self.edge_dark, self.dark_mode)
                     let t = step(self.rect_size.y - 1.0, self.pos.y * self.rect_size.y)
                     return mix(base, edge, t)
                 }
@@ -122,11 +120,10 @@ script_mod! {
                 draw_text +: {
                     dark_mode: instance(0.0)
                     text_style: mod.widgets.shell.FONT_MEDIUM{font_size: 11.0}
+                    fg_light: uniform(mod.widgets.shell.TEXT_L)
+                    fg_dark: uniform(mod.widgets.shell.TEXT_D)
                     get_color: fn() {
-                        // ux ink: #2A3244 on light, #D7DDEA on dark
-                        let light = vec4(0.165, 0.196, 0.267, 1.0)
-                        let dark = vec4(0.843, 0.867, 0.918, 1.0)
-                        return mix(light, dark, self.dark_mode)
+                        return mix(self.fg_light, self.fg_dark, self.dark_mode)
                     }
                 }
                 text: "Panel"

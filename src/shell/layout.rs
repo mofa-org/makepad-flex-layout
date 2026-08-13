@@ -255,11 +255,10 @@ script_mod! {
         show_bg: true
         draw_bg +: {
             dark_mode: instance(0.0)
+            bg_light: uniform(mod.widgets.shell.BG_CONTENT_L)
+            bg_dark: uniform(mod.widgets.shell.BG_CONTENT_D)
             pixel: fn() {
-                // Light: white, Dark: slate-900
-                let light = vec4(1.0, 1.0, 1.0, 1.0)
-                let dark = vec4(0.059, 0.090, 0.165, 1.0)
-                return mix(light, dark, self.dark_mode)
+                return mix(self.bg_light, self.bg_dark, self.dark_mode)
             }
         }
 

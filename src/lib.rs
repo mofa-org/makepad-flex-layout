@@ -68,8 +68,38 @@ pub mod widgets {
 /// Note: The calling application should call `makepad_widgets::script_mod(vm)` before
 /// calling this function.
 pub fn script_mod(vm: &mut ScriptVm) -> ScriptValue {
-    // Register base script module (fonts, text styles)
+    script_mod_with_theme(vm, |_| {})
+}
+
+/// The same registration, with a hook to replace the shell's palette.
+///
+/// The order matters and is the whole point. Widgets bind
+/// `mod.widgets.shell.*` as **uniform defaults** at the moment they register,
+/// and `ShellLayout` composes them into its tree at the end — so a theme has to
+/// land in the window between the defaults and the widgets. That window is
+/// `theme`, below.
+///
+/// Overriding a shell prototype from an application's own `script_mod!`
+/// afterwards does not work. It compiles, runs, and silently changes nothing,
+/// because the instance in `ShellLayout`'s tree captured the prototype as it
+/// stood at this crate's registration. That failure mode is why this hook
+/// exists rather than a note in the README.
+///
+/// ```ignore
+/// makepad_app_shell::script_mod_with_theme(vm, |vm| {
+///     my_app::theme::script_mod(vm);   // sets mod.widgets.shell.BG_HEADER_L, …
+/// });
+/// ```
+pub fn script_mod_with_theme(
+    vm: &mut ScriptVm,
+    theme: impl FnOnce(&mut ScriptVm),
+) -> ScriptValue {
+    // Base module: creates the `mod.widgets.shell` namespace and the fonts.
     crate::live_design::script_mod(vm);
+
+    // Stock palette, then the application's replacement for any of it.
+    crate::theme::tokens::script_mod(vm);
+    theme(vm);
 
     // Register panel widget
     crate::panel::panel::script_mod(vm);

@@ -15,11 +15,16 @@ script_mod! {
         show_bg: true
         draw_bg +: {
             dark_mode: instance(0.0)
+            // Exposed as uniforms rather than written into the shader body, so
+            // an app can retheme the shell by setting values — not by
+            // overriding `pixel`, which it cannot reach: this widget is
+            // composed into ShellLayout's tree when *this* crate registers, so
+            // a later redefinition of the prototype silently does nothing.
+            // Defaults are the stock look; see `theme` for the token names.
+            bg_light: uniform(mod.widgets.shell.BG_HEADER_L)
+            bg_dark: uniform(mod.widgets.shell.BG_HEADER_D)
             pixel: fn() {
-                // Light: white, Dark: slate-900
-                let light = vec4(1.0, 1.0, 1.0, 1.0)
-                let dark = vec4(0.059, 0.090, 0.165, 1.0)
-                return mix(light, dark, self.dark_mode)
+                return mix(self.bg_light, self.bg_dark, self.dark_mode)
             }
         }
 
@@ -87,11 +92,10 @@ script_mod! {
             draw_text +: {
                 dark_mode: instance(0.0)
                 text_style: mod.widgets.shell.FONT_SEMIBOLD{font_size: 14.0}
+                fg_light: uniform(mod.widgets.shell.TEXT_L)
+                fg_dark: uniform(mod.widgets.shell.TEXT_D)
                 get_color: fn() {
-                    // Light: gray-800, Dark: slate-100
-                    let light = vec4(0.122, 0.161, 0.216, 1.0)
-                    let dark = vec4(0.945, 0.961, 0.976, 1.0)
-                    return mix(light, dark, self.dark_mode)
+                    return mix(self.fg_light, self.fg_dark, self.dark_mode)
                 }
             }
             text: "Makepad Flex App Layout Shell"
