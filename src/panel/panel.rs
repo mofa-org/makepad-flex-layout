@@ -7,14 +7,13 @@ use crate::panel::PanelAction;
 use crate::theme::colors::panel_colors;
 use crate::theme::get_global_dark_mode;
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
+    use mod.widgets.shell.*
 
-    use crate::live_design::*;
-
-    pub Panel = {{Panel}} {
+    mod.widgets.PanelBase = #(Panel::register_widget(vm))
+    mod.widgets.Panel = set_type_default() do mod.widgets.PanelBase{
         width: 200
         height: 150
 
@@ -23,29 +22,25 @@ live_design! {
         fullscreenable: false
 
         show_bg: true
-        draw_bg: {
-            instance dark_mode: 0.0
-            uniform border_width: 1.0
+        draw_bg +: {
+            dark_mode: instance(0.0)
+            border_width: uniform(1.0)
+            bg_light: uniform(mod.widgets.shell.BG_PANEL_L)
+            bg_dark: uniform(mod.widgets.shell.BG_PANEL_D)
+            border_light: uniform(mod.widgets.shell.BORDER_L)
+            border_dark: uniform(mod.widgets.shell.BORDER_D)
 
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 // Square corners - no border radius
-                sdf.rect(0.0, 0.0, self.rect_size.x, self.rect_size.y);
+                sdf.rect(0.0, 0.0, self.rect_size.x, self.rect_size.y)
 
-                // Panel background - responds to dark_mode
-                let light_bg = vec4(1.0, 1.0, 1.0, 1.0);           // white
-                let dark_bg = vec4(0.122, 0.161, 0.231, 1.0);      // slate-800
-                let bg_color = mix(light_bg, dark_bg, self.dark_mode);
-                sdf.fill(bg_color);
-
-                // Border
-                let border_color = mix(
-                    vec4(0.886, 0.910, 0.941, 1.0),  // slate-200
-                    vec4(0.200, 0.255, 0.333, 1.0),  // slate-700
-                    self.dark_mode
-                );
-                sdf.stroke(border_color, self.border_width);
-                return sdf.result;
+                sdf.fill(mix(self.bg_light, self.bg_dark, self.dark_mode))
+                sdf.stroke(
+                    mix(self.border_light, self.border_dark, self.dark_mode),
+                    self.border_width
+                )
+                return sdf.result
             }
         }
 
@@ -53,286 +48,291 @@ live_design! {
         padding: 0
 
         // Title bar
-        title_bar = <View> {
+        title_bar := View{
             width: Fill
             height: 32
-            padding: { left: 8, right: 8 }
+            padding: Inset{left: 8. right: 8.}
             flow: Right
-            align: { y: 0.5 }
+            align: Align{y: 0.5}
 
             show_bg: true
-            draw_bg: {
-                instance dark_mode: 0.0
-                fn pixel(self) -> vec4 {
-                    // Light: slate-100, Dark: slate-700
-                    let light = vec4(0.945, 0.961, 0.976, 1.0);
-                    let dark = vec4(0.200, 0.255, 0.333, 1.0);
-                    return mix(light, dark, self.dark_mode);
+            draw_bg +: {
+                dark_mode: instance(0.0)
+                bg_light: uniform(mod.widgets.shell.BG_PANEL_TITLE_L)
+                bg_dark: uniform(mod.widgets.shell.BG_PANEL_TITLE_D)
+                edge_light: uniform(mod.widgets.shell.BORDER_L)
+                edge_dark: uniform(mod.widgets.shell.BORDER_D)
+                pixel: fn() {
+                    // Title bar sits flush with the panel body, separated by a
+                    // hairline rather than a filled band (ux system).
+                    let base = mix(self.bg_light, self.bg_dark, self.dark_mode)
+                    let edge = mix(self.edge_light, self.edge_dark, self.dark_mode)
+                    let t = step(self.rect_size.y - 1.0, self.pos.y * self.rect_size.y)
+                    return mix(base, edge, t)
                 }
             }
 
             // Drag handle icon (6 dots in 2 columns)
-            drag_handle = <View> {
+            drag_handle := View{
                 width: 16
                 height: 20
-                margin: { right: 8 }
-                cursor: Hand
+                margin: Inset{right: 8.}
+                cursor: MouseCursor.Hand
 
                 show_bg: true
-                draw_bg: {
-                    instance dark_mode: 0.0
+                draw_bg +: {
+                    dark_mode: instance(0.0)
 
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        let dot_r = 1.5;
+                    pixel: fn() {
+                        let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                        let dot_r = 1.5
 
                         // Dot color based on theme
-                        let light_dot = vec4(0.580, 0.639, 0.722, 1.0);  // slate-400
-                        let dark_dot = vec4(0.392, 0.455, 0.545, 1.0);   // slate-500
-                        let dot_color = mix(light_dot, dark_dot, self.dark_mode);
+                        let light_dot = vec4(0.580, 0.639, 0.722, 1.0)  // slate-400
+                        let dark_dot = vec4(0.392, 0.455, 0.545, 1.0)   // slate-500
+                        let dot_color = mix(light_dot, dark_dot, self.dark_mode)
 
-                        let col1_x = 5.0;
-                        let col2_x = 11.0;
-                        let row1_y = 5.0;
-                        let row2_y = 10.0;
-                        let row3_y = 15.0;
+                        let col1_x = 5.0
+                        let col2_x = 11.0
+                        let row1_y = 5.0
+                        let row2_y = 10.0
+                        let row3_y = 15.0
 
-                        sdf.circle(col1_x, row1_y, dot_r);
-                        sdf.fill(dot_color);
-                        sdf.circle(col2_x, row1_y, dot_r);
-                        sdf.fill(dot_color);
-                        sdf.circle(col1_x, row2_y, dot_r);
-                        sdf.fill(dot_color);
-                        sdf.circle(col2_x, row2_y, dot_r);
-                        sdf.fill(dot_color);
-                        sdf.circle(col1_x, row3_y, dot_r);
-                        sdf.fill(dot_color);
-                        sdf.circle(col2_x, row3_y, dot_r);
-                        sdf.fill(dot_color);
+                        sdf.circle(col1_x, row1_y, dot_r)
+                        sdf.fill(dot_color)
+                        sdf.circle(col2_x, row1_y, dot_r)
+                        sdf.fill(dot_color)
+                        sdf.circle(col1_x, row2_y, dot_r)
+                        sdf.fill(dot_color)
+                        sdf.circle(col2_x, row2_y, dot_r)
+                        sdf.fill(dot_color)
+                        sdf.circle(col1_x, row3_y, dot_r)
+                        sdf.fill(dot_color)
+                        sdf.circle(col2_x, row3_y, dot_r)
+                        sdf.fill(dot_color)
 
-                        return sdf.result;
+                        return sdf.result
                     }
                 }
             }
 
-            title = <Label> {
-                draw_text: {
-                    instance dark_mode: 0.0
-                    text_style: <FONT_MEDIUM> { font_size: 11.0 }
-                    fn get_color(self) -> vec4 {
-                        // Light: gray-700, Dark: slate-200
-                        let light = vec4(0.247, 0.282, 0.333, 1.0);
-                        let dark = vec4(0.886, 0.910, 0.941, 1.0);
-                        return mix(light, dark, self.dark_mode);
+            title := Label{
+                draw_text +: {
+                    dark_mode: instance(0.0)
+                    text_style: mod.widgets.shell.FONT_MEDIUM{font_size: 11.0}
+                    fg_light: uniform(mod.widgets.shell.TEXT_L)
+                    fg_dark: uniform(mod.widgets.shell.TEXT_D)
+                    get_color: fn() {
+                        return mix(self.fg_light, self.fg_dark, self.dark_mode)
                     }
                 }
                 text: "Panel"
             }
 
-            <View> { width: Fill }
+            View{ width: Fill }
 
             // Fullscreen button (arrows pointing outward)
-            fullscreen_btn = <Button> {
+            fullscreen_btn := Button{
                 width: 20
                 height: 20
                 padding: 0
-                margin: { right: 4 }
+                margin: Inset{right: 4.}
                 visible: false
                 text: ""
-                draw_bg: {
-                    instance dark_mode: 0.0
+                draw_bg +: {
+                    dark_mode: instance(0.0)
 
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        let inset = 5.0;
-                        let arrow_len = 4.0;
+                    pixel: fn() {
+                        let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                        let inset = 5.0
+                        let arrow_len = 4.0
 
-                        let light_color = vec4(0.420, 0.447, 0.502, 1.0);
-                        let dark_color = vec4(0.580, 0.639, 0.722, 1.0);
-                        let hover_color = vec4(0.231, 0.510, 0.965, 1.0);
-                        let base = mix(light_color, dark_color, self.dark_mode);
-                        let color = mix(base, hover_color, self.hover);
+                        let light_color = vec4(0.420, 0.447, 0.502, 1.0)
+                        let dark_color = vec4(0.580, 0.639, 0.722, 1.0)
+                        let hover_color = vec4(0.231, 0.510, 0.965, 1.0)
+                        let base = mix(light_color, dark_color, self.dark_mode)
+                        let color = mix(base, hover_color, self.hover)
 
                         // Four corners with arrows pointing outward
                         // Top-left arrow
-                        sdf.move_to(inset, inset + arrow_len);
-                        sdf.line_to(inset, inset);
-                        sdf.line_to(inset + arrow_len, inset);
-                        sdf.stroke(color, 1.2);
+                        sdf.move_to(inset, inset + arrow_len)
+                        sdf.line_to(inset, inset)
+                        sdf.line_to(inset + arrow_len, inset)
+                        sdf.stroke(color, 1.2)
 
                         // Top-right arrow
-                        sdf.move_to(self.rect_size.x - inset - arrow_len, inset);
-                        sdf.line_to(self.rect_size.x - inset, inset);
-                        sdf.line_to(self.rect_size.x - inset, inset + arrow_len);
-                        sdf.stroke(color, 1.2);
+                        sdf.move_to(self.rect_size.x - inset - arrow_len, inset)
+                        sdf.line_to(self.rect_size.x - inset, inset)
+                        sdf.line_to(self.rect_size.x - inset, inset + arrow_len)
+                        sdf.stroke(color, 1.2)
 
                         // Bottom-left arrow
-                        sdf.move_to(inset, self.rect_size.y - inset - arrow_len);
-                        sdf.line_to(inset, self.rect_size.y - inset);
-                        sdf.line_to(inset + arrow_len, self.rect_size.y - inset);
-                        sdf.stroke(color, 1.2);
+                        sdf.move_to(inset, self.rect_size.y - inset - arrow_len)
+                        sdf.line_to(inset, self.rect_size.y - inset)
+                        sdf.line_to(inset + arrow_len, self.rect_size.y - inset)
+                        sdf.stroke(color, 1.2)
 
                         // Bottom-right arrow
-                        sdf.move_to(self.rect_size.x - inset - arrow_len, self.rect_size.y - inset);
-                        sdf.line_to(self.rect_size.x - inset, self.rect_size.y - inset);
-                        sdf.line_to(self.rect_size.x - inset, self.rect_size.y - inset - arrow_len);
-                        sdf.stroke(color, 1.2);
+                        sdf.move_to(self.rect_size.x - inset - arrow_len, self.rect_size.y - inset)
+                        sdf.line_to(self.rect_size.x - inset, self.rect_size.y - inset)
+                        sdf.line_to(self.rect_size.x - inset, self.rect_size.y - inset - arrow_len)
+                        sdf.stroke(color, 1.2)
 
-                        return sdf.result;
+                        return sdf.result
                     }
                 }
             }
 
             // Restore from fullscreen button (arrows pointing inward)
-            restore_fullscreen_btn = <Button> {
+            restore_fullscreen_btn := Button{
                 width: 20
                 height: 20
                 padding: 0
-                margin: { right: 4 }
+                margin: Inset{right: 4.}
                 visible: false
                 text: ""
-                draw_bg: {
-                    instance dark_mode: 0.0
+                draw_bg +: {
+                    dark_mode: instance(0.0)
 
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        let inset = 5.0;
-                        let arrow_len = 4.0;
-                        let cx = self.rect_size.x / 2.0;
-                        let cy = self.rect_size.y / 2.0;
+                    pixel: fn() {
+                        let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                        let inset = 5.0
+                        let arrow_len = 4.0
+                        let cx = self.rect_size.x / 2.0
+                        let cy = self.rect_size.y / 2.0
 
-                        let light_color = vec4(0.420, 0.447, 0.502, 1.0);
-                        let dark_color = vec4(0.580, 0.639, 0.722, 1.0);
-                        let hover_color = vec4(0.231, 0.510, 0.965, 1.0);
-                        let base = mix(light_color, dark_color, self.dark_mode);
-                        let color = mix(base, hover_color, self.hover);
+                        let light_color = vec4(0.420, 0.447, 0.502, 1.0)
+                        let dark_color = vec4(0.580, 0.639, 0.722, 1.0)
+                        let hover_color = vec4(0.231, 0.510, 0.965, 1.0)
+                        let base = mix(light_color, dark_color, self.dark_mode)
+                        let color = mix(base, hover_color, self.hover)
 
                         // Four corners with arrows pointing inward (toward center)
                         // Top-left pointing to center
-                        sdf.move_to(inset, inset);
-                        sdf.line_to(cx - 2.0, cy - 2.0);
-                        sdf.stroke(color, 1.2);
+                        sdf.move_to(inset, inset)
+                        sdf.line_to(cx - 2.0, cy - 2.0)
+                        sdf.stroke(color, 1.2)
 
                         // Top-right pointing to center
-                        sdf.move_to(self.rect_size.x - inset, inset);
-                        sdf.line_to(cx + 2.0, cy - 2.0);
-                        sdf.stroke(color, 1.2);
+                        sdf.move_to(self.rect_size.x - inset, inset)
+                        sdf.line_to(cx + 2.0, cy - 2.0)
+                        sdf.stroke(color, 1.2)
 
                         // Bottom-left pointing to center
-                        sdf.move_to(inset, self.rect_size.y - inset);
-                        sdf.line_to(cx - 2.0, cy + 2.0);
-                        sdf.stroke(color, 1.2);
+                        sdf.move_to(inset, self.rect_size.y - inset)
+                        sdf.line_to(cx - 2.0, cy + 2.0)
+                        sdf.stroke(color, 1.2)
 
                         // Bottom-right pointing to center
-                        sdf.move_to(self.rect_size.x - inset, self.rect_size.y - inset);
-                        sdf.line_to(cx + 2.0, cy + 2.0);
-                        sdf.stroke(color, 1.2);
+                        sdf.move_to(self.rect_size.x - inset, self.rect_size.y - inset)
+                        sdf.line_to(cx + 2.0, cy + 2.0)
+                        sdf.stroke(color, 1.2)
 
-                        return sdf.result;
+                        return sdf.result
                     }
                 }
             }
 
-            max_btn = <Button> {
+            max_btn := Button{
                 width: 20
                 height: 20
                 padding: 0
-                margin: { right: 4 }
+                margin: Inset{right: 4.}
                 text: ""
-                draw_bg: {
-                    instance dark_mode: 0.0
+                draw_bg +: {
+                    dark_mode: instance(0.0)
 
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        let inset = 5.0;
+                    pixel: fn() {
+                        let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                        let inset = 5.0
 
                         // Icon color
-                        let light_color = vec4(0.420, 0.447, 0.502, 1.0);  // gray-500
-                        let dark_color = vec4(0.580, 0.639, 0.722, 1.0);   // slate-400
-                        let hover_color = vec4(0.231, 0.510, 0.965, 1.0);  // blue-500
-                        let base = mix(light_color, dark_color, self.dark_mode);
-                        let color = mix(base, hover_color, self.hover);
+                        let light_color = vec4(0.420, 0.447, 0.502, 1.0)  // gray-500
+                        let dark_color = vec4(0.580, 0.639, 0.722, 1.0)   // slate-400
+                        let hover_color = vec4(0.231, 0.510, 0.965, 1.0)  // blue-500
+                        let base = mix(light_color, dark_color, self.dark_mode)
+                        let color = mix(base, hover_color, self.hover)
 
-                        sdf.rect(inset, inset, self.rect_size.x - inset * 2.0, self.rect_size.y - inset * 2.0);
-                        sdf.stroke(color, 1.5);
-                        return sdf.result;
+                        sdf.rect(inset, inset, self.rect_size.x - inset * 2.0, self.rect_size.y - inset * 2.0)
+                        sdf.stroke(color, 1.5)
+                        return sdf.result
                     }
                 }
             }
 
-            restore_btn = <Button> {
+            restore_btn := Button{
                 width: 20
                 height: 20
                 padding: 0
-                margin: { right: 4 }
+                margin: Inset{right: 4.}
                 visible: false
                 text: ""
-                draw_bg: {
-                    instance dark_mode: 0.0
+                draw_bg +: {
+                    dark_mode: instance(0.0)
 
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        let inset = 5.0;
-                        let offset = 2.0;
+                    pixel: fn() {
+                        let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                        let inset = 5.0
+                        let offset = 2.0
 
-                        let light_color = vec4(0.420, 0.447, 0.502, 1.0);
-                        let dark_color = vec4(0.580, 0.639, 0.722, 1.0);
-                        let hover_color = vec4(0.231, 0.510, 0.965, 1.0);
-                        let base = mix(light_color, dark_color, self.dark_mode);
-                        let color = mix(base, hover_color, self.hover);
+                        let light_color = vec4(0.420, 0.447, 0.502, 1.0)
+                        let dark_color = vec4(0.580, 0.639, 0.722, 1.0)
+                        let hover_color = vec4(0.231, 0.510, 0.965, 1.0)
+                        let base = mix(light_color, dark_color, self.dark_mode)
+                        let color = mix(base, hover_color, self.hover)
 
                         // Back square
-                        sdf.rect(inset + offset, inset, self.rect_size.x - inset * 2.0 - offset, self.rect_size.y - inset * 2.0 - offset);
-                        sdf.stroke(color, 1.2);
+                        sdf.rect(inset + offset, inset, self.rect_size.x - inset * 2.0 - offset, self.rect_size.y - inset * 2.0 - offset)
+                        sdf.stroke(color, 1.2)
                         // Front square
-                        sdf.rect(inset, inset + offset, self.rect_size.x - inset * 2.0 - offset, self.rect_size.y - inset * 2.0 - offset);
-                        sdf.stroke(color, 1.2);
-                        return sdf.result;
+                        sdf.rect(inset, inset + offset, self.rect_size.x - inset * 2.0 - offset, self.rect_size.y - inset * 2.0 - offset)
+                        sdf.stroke(color, 1.2)
+                        return sdf.result
                     }
                 }
             }
 
-            close_btn = <Button> {
+            close_btn := Button{
                 width: 20
                 height: 20
                 padding: 0
                 margin: 0
                 text: ""
-                draw_bg: {
-                    instance dark_mode: 0.0
+                draw_bg +: {
+                    dark_mode: instance(0.0)
 
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        let inset = 6.0;
+                    pixel: fn() {
+                        let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                        let inset = 6.0
 
-                        let light_color = vec4(0.420, 0.447, 0.502, 1.0);
-                        let dark_color = vec4(0.580, 0.639, 0.722, 1.0);
-                        let hover_color = vec4(0.937, 0.267, 0.267, 1.0);  // red-500
-                        let base = mix(light_color, dark_color, self.dark_mode);
-                        let color = mix(base, hover_color, self.hover);
+                        let light_color = vec4(0.420, 0.447, 0.502, 1.0)
+                        let dark_color = vec4(0.580, 0.639, 0.722, 1.0)
+                        let hover_color = vec4(0.937, 0.267, 0.267, 1.0)  // red-500
+                        let base = mix(light_color, dark_color, self.dark_mode)
+                        let color = mix(base, hover_color, self.hover)
 
-                        sdf.move_to(inset, inset);
-                        sdf.line_to(self.rect_size.x - inset, self.rect_size.y - inset);
-                        sdf.stroke(color, 1.5);
-                        sdf.move_to(self.rect_size.x - inset, inset);
-                        sdf.line_to(inset, self.rect_size.y - inset);
-                        sdf.stroke(color, 1.5);
-                        return sdf.result;
+                        sdf.move_to(inset, inset)
+                        sdf.line_to(self.rect_size.x - inset, self.rect_size.y - inset)
+                        sdf.stroke(color, 1.5)
+                        sdf.move_to(self.rect_size.x - inset, inset)
+                        sdf.line_to(inset, self.rect_size.y - inset)
+                        sdf.stroke(color, 1.5)
+                        return sdf.result
                     }
                 }
             }
         }
 
         // Content area - empty slot for user content injection
-        content = <View> {
+        content := View{
             width: Fill
             height: Fill
-            // Empty - content injected at runtime or via live_design
+            // Empty - content injected at runtime or via DSL override
         }
     }
 }
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct Panel {
     #[deref]
     view: View,
@@ -383,49 +383,34 @@ pub struct Panel {
 
 impl Widget for Panel {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // Push panel ID to scope path so content can identify which panel it's in
         // Capture actions to check for button clicks, then forward non-Panel actions
-        let actions = scope.with_id(self.panel_id, |scope| {
-            cx.capture_actions(|cx| {
-                self.view.handle_event(cx, event, scope);
-            })
+        let actions = cx.capture_actions(|cx| {
+            self.view.handle_event(cx, event, scope);
         });
 
         // Check for Panel-specific button clicks
-        if self.view.button(id!(title_bar.close_btn)).clicked(&actions) {
-            cx.widget_action(
-                self.widget_uid(),
-                &scope.path,
-                PanelAction::Close(self.panel_id),
-            );
+        if self.view.button(cx, ids!(title_bar.close_btn)).clicked(&actions) {
+            cx.widget_action(self.widget_uid(), PanelAction::Close(self.panel_id));
         }
 
-        if self.view.button(id!(title_bar.max_btn)).clicked(&actions)
-            || self.view.button(id!(title_bar.restore_btn)).clicked(&actions)
+        if self.view.button(cx, ids!(title_bar.max_btn)).clicked(&actions)
+            || self.view.button(cx, ids!(title_bar.restore_btn)).clicked(&actions)
         {
-            cx.widget_action(
-                self.widget_uid(),
-                &scope.path,
-                PanelAction::Maximize(self.panel_id),
-            );
+            cx.widget_action(self.widget_uid(), PanelAction::Maximize(self.panel_id));
         }
 
-        if self.view.button(id!(title_bar.fullscreen_btn)).clicked(&actions)
-            || self.view.button(id!(title_bar.restore_fullscreen_btn)).clicked(&actions)
+        if self.view.button(cx, ids!(title_bar.fullscreen_btn)).clicked(&actions)
+            || self.view.button(cx, ids!(title_bar.restore_fullscreen_btn)).clicked(&actions)
         {
-            cx.widget_action(
-                self.widget_uid(),
-                &scope.path,
-                PanelAction::Fullscreen(self.panel_id),
-            );
+            cx.widget_action(self.widget_uid(), PanelAction::Fullscreen(self.panel_id));
         }
 
         // IMPORTANT: Forward all captured actions to the parent so child widget actions
         // (like TimelineAction::Seek, PlaybackAction, etc.) reach the app
         cx.extend_actions(actions);
 
-        let drag_handle = self.view.view(id!(title_bar.drag_handle));
-        let title_bar = self.view.view(id!(title_bar));
+        let drag_handle = self.view.view(cx, ids!(title_bar.drag_handle));
+        let title_bar = self.view.view(cx, ids!(title_bar));
 
         // Handle drag from drag_handle
         let mut handled = false;
@@ -439,11 +424,7 @@ impl Widget for Panel {
                 let dist = (fe.abs - self.drag_start).length();
                 if !self.is_dragging && dist > 10.0 {
                     self.is_dragging = true;
-                    cx.widget_action(
-                        self.widget_uid(),
-                        &scope.path,
-                        PanelAction::StartDrag(self.panel_id),
-                    );
+                    cx.widget_action(self.widget_uid(), PanelAction::StartDrag(self.panel_id));
                 }
                 handled = true;
             }
@@ -451,7 +432,6 @@ impl Widget for Panel {
                 if self.is_dragging {
                     cx.widget_action(
                         self.widget_uid(),
-                        &scope.path,
                         PanelAction::EndDrag(self.panel_id, fe.abs),
                     );
                 }
@@ -471,18 +451,13 @@ impl Widget for Panel {
                 Hit::FingerMove(fe) => {
                     if !self.is_dragging && (fe.abs - self.drag_start).length() > 10.0 {
                         self.is_dragging = true;
-                        cx.widget_action(
-                            self.widget_uid(),
-                            &scope.path,
-                            PanelAction::StartDrag(self.panel_id),
-                        );
+                        cx.widget_action(self.widget_uid(), PanelAction::StartDrag(self.panel_id));
                     }
                 }
                 Hit::FingerUp(fe) => {
                     if self.is_dragging {
                         cx.widget_action(
                             self.widget_uid(),
-                            &scope.path,
                             PanelAction::EndDrag(self.panel_id, fe.abs),
                         );
                     }
@@ -501,21 +476,17 @@ impl Widget for Panel {
         self.apply_visual_update(cx);
 
         // Maximize buttons (for main grid)
-        self.view.button(id!(title_bar.max_btn)).set_visible(cx, !self.is_maximized && self.maximizable);
-        self.view.button(id!(title_bar.restore_btn)).set_visible(cx, self.is_maximized && self.maximizable);
+        self.view.button(cx, ids!(title_bar.max_btn)).set_visible(cx, !self.is_maximized && self.maximizable);
+        self.view.button(cx, ids!(title_bar.restore_btn)).set_visible(cx, self.is_maximized && self.maximizable);
 
         // Fullscreen buttons (for footer grid)
-        self.view.button(id!(title_bar.fullscreen_btn)).set_visible(cx, !self.is_fullscreen && self.fullscreenable);
-        self.view.button(id!(title_bar.restore_fullscreen_btn)).set_visible(cx, self.is_fullscreen && self.fullscreenable);
+        self.view.button(cx, ids!(title_bar.fullscreen_btn)).set_visible(cx, !self.is_fullscreen && self.fullscreenable);
+        self.view.button(cx, ids!(title_bar.restore_fullscreen_btn)).set_visible(cx, self.is_fullscreen && self.fullscreenable);
 
         // Close button
-        self.view.button(id!(title_bar.close_btn)).set_visible(cx, self.closable);
+        self.view.button(cx, ids!(title_bar.close_btn)).set_visible(cx, self.closable);
 
-        // Draw with panel ID in scope path so content can identify which panel it's in
-        // Content widgets can access panel ID via: scope.path.from_end(0)
-        scope.with_id(self.panel_id, |scope| {
-            self.view.draw_walk(cx, scope, walk)
-        })
+        self.view.draw_walk(cx, scope, walk)
     }
 }
 
@@ -565,47 +536,55 @@ impl Panel {
     }
 
     /// Get the content area view for adding children
-    pub fn content_view(&self) -> ViewRef {
-        self.view.view(id!(content))
+    pub fn content_view(&self, cx: &mut Cx) -> ViewRef {
+        self.view.view(cx, ids!(content))
     }
 
     /// Apply dark mode to this panel (internal, called during draw)
     fn apply_dark_mode_internal(&mut self, cx: &mut Cx, dark_mode: f64) {
         // Apply to main panel background
-        self.view.apply_over(cx, live! {
-            draw_bg: { dark_mode: (dark_mode) }
+        script_apply_eval!(cx, self.view, {
+            draw_bg +: { dark_mode: #(dark_mode) }
         });
 
         // Apply to title bar
-        self.view.view(id!(title_bar)).apply_over(cx, live! {
-            draw_bg: { dark_mode: (dark_mode) }
+        let mut title_bar = self.view.view(cx, ids!(title_bar));
+        script_apply_eval!(cx, title_bar, {
+            draw_bg +: { dark_mode: #(dark_mode) }
         });
 
         // Apply to drag handle
-        self.view.view(id!(title_bar.drag_handle)).apply_over(cx, live! {
-            draw_bg: { dark_mode: (dark_mode) }
+        let mut drag_handle = self.view.view(cx, ids!(title_bar.drag_handle));
+        script_apply_eval!(cx, drag_handle, {
+            draw_bg +: { dark_mode: #(dark_mode) }
         });
 
         // Apply to title label
-        self.view.label(id!(title_bar.title)).apply_over(cx, live! {
-            draw_text: { dark_mode: (dark_mode) }
+        let mut title = self.view.label(cx, ids!(title_bar.title));
+        script_apply_eval!(cx, title, {
+            draw_text +: { dark_mode: #(dark_mode) }
         });
 
         // Apply to all title bar buttons
-        self.view.button(id!(title_bar.close_btn)).apply_over(cx, live! {
-            draw_bg: { dark_mode: (dark_mode) }
+        let mut close_btn = self.view.button(cx, ids!(title_bar.close_btn));
+        script_apply_eval!(cx, close_btn, {
+            draw_bg +: { dark_mode: #(dark_mode) }
         });
-        self.view.button(id!(title_bar.max_btn)).apply_over(cx, live! {
-            draw_bg: { dark_mode: (dark_mode) }
+        let mut max_btn = self.view.button(cx, ids!(title_bar.max_btn));
+        script_apply_eval!(cx, max_btn, {
+            draw_bg +: { dark_mode: #(dark_mode) }
         });
-        self.view.button(id!(title_bar.restore_btn)).apply_over(cx, live! {
-            draw_bg: { dark_mode: (dark_mode) }
+        let mut restore_btn = self.view.button(cx, ids!(title_bar.restore_btn));
+        script_apply_eval!(cx, restore_btn, {
+            draw_bg +: { dark_mode: #(dark_mode) }
         });
-        self.view.button(id!(title_bar.fullscreen_btn)).apply_over(cx, live! {
-            draw_bg: { dark_mode: (dark_mode) }
+        let mut fullscreen_btn = self.view.button(cx, ids!(title_bar.fullscreen_btn));
+        script_apply_eval!(cx, fullscreen_btn, {
+            draw_bg +: { dark_mode: #(dark_mode) }
         });
-        self.view.button(id!(title_bar.restore_fullscreen_btn)).apply_over(cx, live! {
-            draw_bg: { dark_mode: (dark_mode) }
+        let mut restore_fullscreen_btn = self.view.button(cx, ids!(title_bar.restore_fullscreen_btn));
+        script_apply_eval!(cx, restore_fullscreen_btn, {
+            draw_bg +: { dark_mode: #(dark_mode) }
         });
     }
 
@@ -619,8 +598,8 @@ impl Panel {
         let colors = panel_colors();
         let color = colors[index % colors.len()];
 
-        self.view.apply_over(cx, live! {
-            draw_bg: { panel_color: (color) }
+        script_apply_eval!(cx, self.view, {
+            draw_bg +: { panel_color: #(color) }
         });
 
         let title = if self.title.is_empty() {
@@ -628,7 +607,7 @@ impl Panel {
         } else {
             self.title.clone()
         };
-        self.view.label(id!(title_bar.title)).set_text(cx, &title);
+        self.view.label(cx, ids!(title_bar.title)).set_text(cx, &title);
     }
 }
 
@@ -679,40 +658,48 @@ impl PanelRef {
     pub fn apply_dark_mode(&self, cx: &mut Cx, dark_mode: f64) {
         if let Some(mut inner) = self.borrow_mut() {
             // Apply to main panel background
-            inner.view.apply_over(cx, live! {
-                draw_bg: { dark_mode: (dark_mode) }
+            script_apply_eval!(cx, inner.view, {
+                draw_bg +: { dark_mode: #(dark_mode) }
             });
 
             // Apply to title bar
-            inner.view.view(id!(title_bar)).apply_over(cx, live! {
-                draw_bg: { dark_mode: (dark_mode) }
+            let mut title_bar = inner.view.view(cx, ids!(title_bar));
+            script_apply_eval!(cx, title_bar, {
+                draw_bg +: { dark_mode: #(dark_mode) }
             });
 
             // Apply to drag handle
-            inner.view.view(id!(title_bar.drag_handle)).apply_over(cx, live! {
-                draw_bg: { dark_mode: (dark_mode) }
+            let mut drag_handle = inner.view.view(cx, ids!(title_bar.drag_handle));
+            script_apply_eval!(cx, drag_handle, {
+                draw_bg +: { dark_mode: #(dark_mode) }
             });
 
             // Apply to title label
-            inner.view.label(id!(title_bar.title)).apply_over(cx, live! {
-                draw_text: { dark_mode: (dark_mode) }
+            let mut title = inner.view.label(cx, ids!(title_bar.title));
+            script_apply_eval!(cx, title, {
+                draw_text +: { dark_mode: #(dark_mode) }
             });
 
             // Apply to all title bar buttons
-            inner.view.button(id!(title_bar.close_btn)).apply_over(cx, live! {
-                draw_bg: { dark_mode: (dark_mode) }
+            let mut close_btn = inner.view.button(cx, ids!(title_bar.close_btn));
+            script_apply_eval!(cx, close_btn, {
+                draw_bg +: { dark_mode: #(dark_mode) }
             });
-            inner.view.button(id!(title_bar.max_btn)).apply_over(cx, live! {
-                draw_bg: { dark_mode: (dark_mode) }
+            let mut max_btn = inner.view.button(cx, ids!(title_bar.max_btn));
+            script_apply_eval!(cx, max_btn, {
+                draw_bg +: { dark_mode: #(dark_mode) }
             });
-            inner.view.button(id!(title_bar.restore_btn)).apply_over(cx, live! {
-                draw_bg: { dark_mode: (dark_mode) }
+            let mut restore_btn = inner.view.button(cx, ids!(title_bar.restore_btn));
+            script_apply_eval!(cx, restore_btn, {
+                draw_bg +: { dark_mode: #(dark_mode) }
             });
-            inner.view.button(id!(title_bar.fullscreen_btn)).apply_over(cx, live! {
-                draw_bg: { dark_mode: (dark_mode) }
+            let mut fullscreen_btn = inner.view.button(cx, ids!(title_bar.fullscreen_btn));
+            script_apply_eval!(cx, fullscreen_btn, {
+                draw_bg +: { dark_mode: #(dark_mode) }
             });
-            inner.view.button(id!(title_bar.restore_fullscreen_btn)).apply_over(cx, live! {
-                draw_bg: { dark_mode: (dark_mode) }
+            let mut restore_fullscreen_btn = inner.view.button(cx, ids!(title_bar.restore_fullscreen_btn));
+            script_apply_eval!(cx, restore_fullscreen_btn, {
+                draw_bg +: { dark_mode: #(dark_mode) }
             });
         }
     }
@@ -725,7 +712,7 @@ impl PanelRef {
     }
 
     /// Get the content area view for adding children
-    pub fn content_view(&self) -> Option<ViewRef> {
-        self.borrow().map(|inner| inner.content_view())
+    pub fn content_view(&self, cx: &mut Cx) -> Option<ViewRef> {
+        self.borrow().map(|inner| inner.content_view(cx))
     }
 }
